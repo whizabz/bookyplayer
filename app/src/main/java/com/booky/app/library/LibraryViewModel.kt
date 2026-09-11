@@ -1,0 +1,347 @@
+package com.booky.app.library
+
+import android.app.Application
+import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.booky.app.data.Audiobook
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+
+enum class LibrarySort(val label: String) {
+    Manual("Manual"),
+    LastPlayed("Last played"),
+    DateAdded("Date added"),
+    Alphabetical("Alphabetical"),
+}
+
+data class LibraryUiState(
+    val folderUri: String? = null,
+    val folderName: String? = null,
+    val folderPath: String? = null,
+    val books: List<Audiobook> = emptyList(),
+    val archivedBooks: List<Audiobook> = emptyList(),
+    val playQueue: List<Audiobook> = emptyList(),
+    val scanning: Boolean = false,
+    val showArchived: Boolean = false,
+    val sort: LibrarySort = LibrarySort.Manual,
+)
+
+class LibraryViewModel(application: Application) : AndroidViewModel(application) {
+    private val prefs = application.getSharedPreferences("booky_prefs", 0)
+    private val scanner = LibraryScanner(application)
+    private var scanned = emptyList<Audiobook>()
+    private val hiddenIds = prefs.getStringSet(KEY_HIDDEN, emptySet())!!.toMutableSet()
+    private val archivedIds = prefs.getStringSet(KEY_ARCHIVED, emptySet())!!.toMutableSet()
+    private val lastPlayed = loadLongMap(KEY_LAST_PLAYED)
+    private val listened = loadLongMap(KEY_LISTENED)
+    private val manualOrder = prefs.getString(KEY_MANUAL_ORDER, "")
+        .orEmpty()
+        .split(',')
+        .filter { it.isNotBlank() }
+        .toMutableList()
+    private val metadata = loadMetadata()
+
+    private val _state = MutableStateFlow(
+        LibraryUiState(
+            folderUri = prefs.getString(KEY_FOLDER_URI, null),
+            showArchived = prefs.getBoolean(KEY_SHOW_ARCHIVED, false),
+            sort = LibrarySort.entries.getOrElse(prefs.getInt(KEY_SORT, 0)) { LibrarySort.Manual },
+        ),
+    )
+    val state: StateFlow<LibraryUiState> = _state
+
+    init {
+        seedProgressFromLastSession()
+        _state.value.folderUri?.let { uri ->
+            refreshFolderName(Uri.parse(uri))
+            scan()
+        }
+    }
+
+    fun setListened(bookId: String, positionMs: Long) {
+        val value = positionMs.coerceAtLeast(0L)
+        if (listened[bookId] == value) return
+        listened[bookId] = value
+        persistLongMap(KEY_LISTENED, listened)
+        _state.update { state ->
+            fun List<Audiobook>.withProgress() = map { book ->
+                if (book.id == bookId) book.copy(listenedMs = value) else book
+            }
+            state.copy(
+                books = state.books.withProgress(),
+                archivedBooks = state.archivedBooks.withProgress(),
+                playQueue = state.playQueue.withProgress(),
+            )
+        }
+    }
+
+    fun setFolder(uri: Uri) {
+        val resolver = getApplication<Application>().contentResolver
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        _state.value.folderUri?.let { previous ->
+            try {
+                resolver.releasePersistableUriPermission(Uri.parse(previous), flags)
+            } catch (_: SecurityException) {
+                // Already gone.
+            }
+        }
+        try {
+            resolver.takePersistableUriPermission(uri, flags)
+        } catch (_: SecurityException) {
+            // Some providers grant persistable access without this extra call.
+        }
+        prefs.edit().putString(KEY_FOLDER_URI, uri.toString()).apply()
+        scanned = emptyList()
+        _state.value = _state.value.copy(folderUri = uri.toString(), books = emptyList(), archivedBooks = emptyList())
+        refreshFolderName(uri)
+        scan()
+    }
+
+    fun scan() {
+        val uri = _state.value.folderUri ?: return
+        _state.value = _state.value.copy(scanning = true)
+        viewModelScope.launch {
+            val books = withContext(Dispatchers.IO) {
+                try {
+                    scanner.scan(Uri.parse(uri))
+                } catch (_: SecurityException) {
+                    emptyList()
+                }
+            }
+            scanned = books
+            publishBooks(scanning = false)
+        }
+    }
+
+    fun setShowArchived(show: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_ARCHIVED, show).apply()
+        _state.update { it.copy(showArchived = show) }
+        publishBooks()
+    }
+
+    fun setSort(sort: LibrarySort) {
+        prefs.edit().putInt(KEY_SORT, sort.ordinal).apply()
+        _state.update { it.copy(sort = sort) }
+        publishBooks()
+    }
+
+    fun touchLastPlayed(bookId: String) {
+        lastPlayed[bookId] = System.currentTimeMillis()
+        persistLongMap(KEY_LAST_PLAYED, lastPlayed)
+        publishBooks()
+    }
+
+    fun markPlayed(ids: Collection<String>) {
+        val durationById = (scanned).associate { it.id to it.durationMs }
+        ids.forEach { id ->
+            listened[id] = durationById[id] ?: scanned.firstOrNull { it.id == id }?.durationMs ?: 0L
+            archivedIds.remove(id)
+        }
+        persistLongMap(KEY_LISTENED, listened)
+        persistIds(KEY_ARCHIVED, archivedIds)
+        publishBooks()
+    }
+
+    fun archive(ids: Collection<String>, archived: Boolean) {
+        if (archived) archivedIds += ids else archivedIds -= ids.toSet()
+        persistIds(KEY_ARCHIVED, archivedIds)
+        publishBooks()
+    }
+
+    fun delete(ids: Collection<String>) {
+        val app = getApplication<Application>()
+        ids.forEach { id ->
+            hiddenIds += id
+            archivedIds.remove(id)
+            lastPlayed.remove(id)
+            listened.remove(id)
+            metadata.remove(id)
+            manualOrder.remove(id)
+            CoverStore.delete(app, id)
+            val uri = Uri.parse(id)
+            val file = DocumentFile.fromSingleUri(app, uri)
+                ?: DocumentFile.fromTreeUri(app, uri)
+            try {
+                file?.delete()
+            } catch (_: SecurityException) {
+                // Stay hidden even if the provider refused the delete.
+            }
+        }
+        persistIds(KEY_HIDDEN, hiddenIds)
+        persistIds(KEY_ARCHIVED, archivedIds)
+        persistLongMap(KEY_LAST_PLAYED, lastPlayed)
+        persistLongMap(KEY_LISTENED, listened)
+        persistMetadata()
+        prefs.edit().putString(KEY_MANUAL_ORDER, manualOrder.joinToString(",")).apply()
+        publishBooks()
+    }
+
+    fun updateMetadata(
+        bookId: String,
+        title: String,
+        author: String,
+        narrator: String,
+        chapterTitles: List<String>,
+        cover: Bitmap? = null,
+    ) {
+        val extra = metadata[bookId] ?: JSONObject()
+        extra.put("title", title.trim())
+        extra.put("author", author.trim())
+        extra.put("narrator", narrator.trim())
+        extra.put("chapters", JSONArray(chapterTitles.map { it.trim() }))
+        if (cover != null) {
+            extra.put("coverUri", CoverStore.save(getApplication(), bookId, cover))
+        }
+        metadata[bookId] = extra
+        persistMetadata()
+        publishBooks()
+    }
+
+    private fun publishBooks(scanning: Boolean = _state.value.scanning) {
+        val decorated = scanned
+            .filterNot { it.id in hiddenIds }
+            .map { book ->
+                val extra = metadata[book.id]
+                val titles = extra?.optJSONArray("chapters")?.let { array ->
+                    List(array.length()) { index -> array.optString(index) }
+                        .takeIf { it.size == book.chapterTitles.size }
+                }
+                val chapterIndex = (book.currentChapter - 1).coerceAtLeast(0)
+                val customCover = extra?.optString("coverUri").orEmpty().ifBlank { null }
+                book.copy(
+                    title = extra?.optString("title")?.ifBlank { book.title } ?: book.title,
+                    author = extra?.optString("author")?.ifBlank { book.author } ?: book.author,
+                    narrator = extra?.optString("narrator")?.ifBlank { book.narrator } ?: book.narrator,
+                    chapterTitles = titles ?: book.chapterTitles,
+                    currentChapterTitle = titles?.getOrNull(chapterIndex) ?: book.currentChapterTitle,
+                    coverUri = customCover ?: book.coverUri,
+                    listenedMs = listened[book.id] ?: book.listenedMs,
+                    lastPlayedMs = lastPlayed[book.id] ?: 0L,
+                    archived = book.id in archivedIds,
+                )
+            }
+        val known = decorated.map { it.id }
+        known.filter { it !in manualOrder }.forEach { manualOrder += it }
+        manualOrder.removeAll { it !in known }
+        prefs.edit().putString(KEY_MANUAL_ORDER, manualOrder.joinToString(",")).apply()
+        val active = sortBooks(decorated.filterNot { it.archived })
+        val archived = sortBooks(decorated.filter { it.archived })
+        _state.update {
+            it.copy(
+                books = active,
+                archivedBooks = archived,
+                playQueue = active,
+                scanning = scanning,
+            )
+        }
+    }
+
+    private fun sortBooks(books: List<Audiobook>): List<Audiobook> {
+        return when (_state.value.sort) {
+            LibrarySort.Manual -> {
+                val order = manualOrder.withIndex().associate { it.value to it.index }
+                books.sortedBy { order[it.id] ?: Int.MAX_VALUE }
+            }
+            LibrarySort.LastPlayed -> books.sortedByDescending { it.lastPlayedMs }
+            LibrarySort.DateAdded -> books.sortedByDescending { it.addedAtMs }
+            LibrarySort.Alphabetical -> books.sortedBy { it.title.lowercase() }
+        }
+    }
+
+    private fun seedProgressFromLastSession() {
+        val lastId = prefs.getString("last_book_id", null) ?: return
+        val lastPos = prefs.getLong("last_position_ms", 0L)
+        if (lastPos > (listened[lastId] ?: 0L)) {
+            listened[lastId] = lastPos
+            persistLongMap(KEY_LISTENED, listened)
+        }
+    }
+
+    private fun refreshFolderName(uri: Uri) {
+        val name = DocumentFile.fromTreeUri(getApplication(), uri)?.name
+            ?: uri.lastPathSegment
+        _state.value = _state.value.copy(folderName = name, folderPath = treeUriDisplayPath(uri))
+    }
+
+    private fun treeUriDisplayPath(uri: Uri): String {
+        val documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+            ?: uri.lastPathSegment?.substringAfter(':')
+            ?: return uri.toString()
+        return when {
+            documentId.startsWith("raw:") -> documentId.removePrefix("raw:")
+            documentId.startsWith("primary:") -> {
+                val rest = documentId.removePrefix("primary:")
+                if (rest.isBlank()) "/storage/emulated/0" else "/storage/emulated/0/$rest"
+            }
+            else -> {
+                val colon = documentId.indexOf(':')
+                if (colon >= 0) {
+                    val volume = documentId.take(colon)
+                    val rest = documentId.substring(colon + 1)
+                    if (rest.isBlank()) "/$volume" else "/$volume/$rest"
+                } else {
+                    documentId
+                }
+            }
+        }
+    }
+
+    private fun loadLongMap(key: String): MutableMap<String, Long> {
+        val map = mutableMapOf<String, Long>()
+        prefs.getString(key, null)?.split(',')?.forEach { part ->
+            val pieces = part.split('=')
+            if (pieces.size != 2) return@forEach
+            val value = pieces[1].toLongOrNull() ?: return@forEach
+            map[pieces[0]] = value
+        }
+        return map
+    }
+
+    private fun persistLongMap(key: String, map: Map<String, Long>) {
+        val encoded = map.entries.joinToString(",") { "${it.key}=${it.value}" }
+        prefs.edit().putString(key, encoded).apply()
+    }
+
+    private fun persistIds(key: String, ids: Set<String>) {
+        prefs.edit().putStringSet(key, ids.toSet()).apply()
+    }
+
+    private fun loadMetadata(): MutableMap<String, JSONObject> {
+        val map = mutableMapOf<String, JSONObject>()
+        val raw = prefs.getString(KEY_METADATA, null) ?: return map
+        val root = runCatching { JSONObject(raw) }.getOrNull() ?: return map
+        root.keys().forEach { key ->
+            map[key] = root.optJSONObject(key) ?: return@forEach
+        }
+        return map
+    }
+
+    private fun persistMetadata() {
+        val root = JSONObject()
+        metadata.forEach { (id, value) -> root.put(id, value) }
+        prefs.edit().putString(KEY_METADATA, root.toString()).apply()
+    }
+
+    private companion object {
+        const val KEY_FOLDER_URI = "library_folder_uri"
+        const val KEY_HIDDEN = "library_hidden_ids"
+        const val KEY_ARCHIVED = "library_archived_ids"
+        const val KEY_LAST_PLAYED = "library_last_played"
+        const val KEY_LISTENED = "library_listened"
+        const val KEY_METADATA = "library_metadata"
+        const val KEY_MANUAL_ORDER = "library_manual_order"
+        const val KEY_SHOW_ARCHIVED = "library_show_archived"
+        const val KEY_SORT = "library_sort"
+    }
+}
