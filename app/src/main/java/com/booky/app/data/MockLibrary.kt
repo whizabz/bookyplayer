@@ -24,15 +24,6 @@ data class Audiobook(
     val chapterStartMs: List<Long> = emptyList(),
     val addedAtMs: Long = 0L,
     val lastPlayedMs: Long = 0L,
-    val archived: Boolean = false,
-)
-
-data class SearchRecency(
-    val id: String,
-    val title: String,
-    val subtitle: String,
-    val durationLabel: String,
-    val bookId: String,
 )
 
 private fun hours(h: Int, m: Int) = ((h * 3600L) + (m * 60L)) * 1000L
@@ -168,25 +159,6 @@ object MockLibrary {
         moby,
         janeEyre,
     )
-
-    val recentSearches: List<SearchRecency> = listOf(
-        SearchRecency(
-            id = "sherlock-5",
-            title = "The Five Orange Pips",
-            subtitle = "Stephen Fry",
-            durationLabel = "48m",
-            bookId = sherlock.id,
-        ),
-        SearchRecency(
-            id = "pride-41",
-            title = "Pride and Prejudice · Chapter 41",
-            subtitle = "Rosamund Pike",
-            durationLabel = "22m",
-            bookId = pride.id,
-        ),
-    )
-
-    fun bookById(id: String): Audiobook? = books.find { it.id == id }
 }
 
 fun formatDuration(ms: Long): String {

@@ -15,6 +15,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -31,6 +32,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.booky.app.settings.AppearanceMode
 import com.booky.app.ui.components.BookyIcons
@@ -42,6 +44,8 @@ fun SettingsScreen(
     onAppearanceChange: (AppearanceMode) -> Unit,
     folderPath: String? = null,
     onChooseFolder: () -> Unit = {},
+    onBack: () -> Unit = {},
+    bottomContentPadding: Dp = 16.dp,
     modifier: Modifier = Modifier,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -55,6 +59,11 @@ fun SettingsScreen(
             LargeFlexibleTopAppBar(
                 title = {
                     Text("Settings", maxLines = 2, overflow = TextOverflow.Ellipsis)
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(BookyIcons.back, contentDescription = "Back")
+                    }
                 },
                 windowInsets = WindowInsets(0),
                 scrollBehavior = scrollBehavior,
@@ -70,7 +79,8 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                .padding(bottom = bottomContentPadding),
         ) {
             SectionLabel("Library")
             Card(modifier = Modifier.fillMaxWidth()) {

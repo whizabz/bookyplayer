@@ -2,11 +2,11 @@ package com.booky.app
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -20,8 +20,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.booky.app.library.LibraryViewModel
@@ -29,13 +29,10 @@ import com.booky.app.library.PersistableOpenDocumentTree
 import com.booky.app.player.PlayerViewModel
 import com.booky.app.settings.AppearanceViewModel
 import com.booky.app.theme.BookyTheme
-import com.booky.app.ui.components.BookyBottomBar
-import com.booky.app.ui.components.MiniPlayerBar
 import com.booky.app.ui.library.LibraryScreen
-import com.booky.app.ui.navigation.TopLevelDestination
 import com.booky.app.ui.player.NowPlayingScreen
 import com.booky.app.ui.settings.SettingsScreen
-import com.booky.app.ui.stats.StatsScreen
+import kotlinx.coroutines.delay
 
 @Composable
 fun BookyApp(
@@ -88,127 +85,104 @@ fun BookyApp(
         }
     }
     BookyTheme(appearance = appearance, book = player.book) {
-        var destination by rememberSaveable { mutableStateOf(TopLevelDestination.Library) }
+        var showingSettings by rememberSaveable { mutableStateOf(false) }
         var nowPlaying by rememberSaveable { mutableStateOf(false) }
         val canvas = MaterialTheme.colorScheme.background
+        BackHandler(enabled = showingSettings) { showingSettings = false }
+        val miniPlayerClearance = if (player.book != null) 104.dp else 0.dp
 
         Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(canvas)
-                .imePadding(),
-            containerColor = canvas,
-            bottomBar = {
-                Column {
-                    val book = player.book
-                    if (book != null) {
-                        MiniPlayerBar(
-                            book = book,
-                            isPlaying = player.isPlaying,
-                            progress = if (player.chapterDurationMs == 0L) {
-                                0f
-                            } else {
-                                (player.chapterPositionMs.toFloat() / player.chapterDurationMs)
-                                    .coerceIn(0f, 1f)
-                            },
-                            onOpenPlayer = { nowPlaying = true },
-                            onTogglePlay = playerViewModel::togglePlay,
-                            onSkipBack = { playerViewModel.skip(-10_000) },
-                        )
-                    }
-                    BookyBottomBar(
-                        current = destination,
-                        onSelect = { destination = it },
+            Scaffold(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(canvas)
+                    .imePadding(),
+                containerColor = canvas,
+            ) { padding ->
+                val screenModifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                if (showingSettings) {
+                    SettingsScreen(
+                        appearance = appearance,
+                        onAppearanceChange = appearanceViewModel::setMode,
+                        folderPath = library.folderPath,
+                        onChooseFolder = { pickFolder.launch(null) },
+                        onBack = { showingSettings = false },
+                        bottomContentPadding = miniPlayerClearance,
+                        modifier = screenModifier,
+                    )
+                } else {
+                    LibraryScreen(
+                        books = library.books,
+                        activeBookId = player.book?.id,
+                        isPlaying = player.isPlaying,
+                        playbackProgress = if (player.bookDurationMs == 0L) {
+                            0f
+                        } else {
+                            (player.bookPositionMs.toFloat() / player.bookDurationMs).coerceIn(0f, 1f)
+                        },
+                        hasFolder = library.folderUri != null,
+                        folderName = library.folderName,
+                        scanning = library.scanning,
+                        sort = library.sort,
+                        onSortChange = libraryViewModel::setSort,
+                        onMarkPlayed = { books ->
+                            libraryViewModel.markPlayed(books.map { it.id })
+                            if (books.any { it.id == player.book?.id }) {
+                                playerViewModel.markBookPlayed()
+                            }
+                        },
+                        onDelete = { books ->
+                            val ids = books.map { it.id }
+                            if (player.book?.id in ids) {
+                                nowPlaying = false
+                                playerViewModel.closeBook()
+                            }
+                            libraryViewModel.delete(ids)
+                        },
+                        onUpdateMetadata = { id, title, author, narrator, chapters, cover ->
+                            libraryViewModel.updateMetadata(id, title, author, narrator, chapters, cover)
+                            libraryViewModel.state.value.books
+                                .find { it.id == id }
+                                ?.let(playerViewModel::patchDisplayedBook)
+                        },
+                        onChooseFolder = { pickFolder.launch(null) },
+                        onOpenBook = { book ->
+                            libraryViewModel.touchLastPlayed(book.id)
+                            playerViewModel.selectBook(book)
+                            nowPlaying = true
+                        },
+                        onOpenSettings = { showingSettings = true },
+                        bottomContentPadding = 24.dp + miniPlayerClearance,
+                        modifier = screenModifier,
                     )
                 }
-            },
-        ) { padding ->
-            val screenModifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-            when (destination) {
-                TopLevelDestination.Library -> LibraryScreen(
-                    books = library.books,
-                    archivedBooks = if (library.showArchived) library.archivedBooks else emptyList(),
-                    activeBookId = player.book?.id,
-                    isPlaying = player.isPlaying,
-                    playbackProgress = if (player.bookDurationMs == 0L) {
-                        0f
-                    } else {
-                        (player.bookPositionMs.toFloat() / player.bookDurationMs).coerceIn(0f, 1f)
+            }
+
+            val book = player.book
+            if (book != null) {
+                NowPlayingScreen(
+                    player = player,
+                    expanded = nowPlaying,
+                    onExpandedChange = { nowPlaying = it },
+                    onTogglePlay = playerViewModel::togglePlay,
+                    onSkip = playerViewModel::skip,
+                    onSeek = playerViewModel::seek,
+                    onSeekChapter = playerViewModel::seekToChapter,
+                    onSetSpeed = playerViewModel::setSpeed,
+                    onSetSleepTimer = playerViewModel::setSleepTimer,
+                    onRestartChapter = playerViewModel::restartChapter,
+                    onMarkChapterPlayed = playerViewModel::markChapterPlayed,
+                    onMarkBookPlayed = playerViewModel::markBookPlayed,
+                    onToggleRepeat = playerViewModel::toggleRepeat,
+                    onCloseBook = {
+                        nowPlaying = false
+                        playerViewModel.closeBook()
                     },
-                    hasFolder = library.folderUri != null,
-                    folderName = library.folderName,
-                    scanning = library.scanning,
-                    showArchived = library.showArchived,
-                    sort = library.sort,
-                    onShowArchivedChange = libraryViewModel::setShowArchived,
-                    onSortChange = libraryViewModel::setSort,
-                    onMarkPlayed = { books ->
-                        libraryViewModel.markPlayed(books.map { it.id })
-                        if (books.any { it.id == player.book?.id }) {
-                            playerViewModel.markBookPlayed()
-                        }
-                    },
-                    onArchive = { books, archived ->
-                        libraryViewModel.archive(books.map { it.id }, archived)
-                    },
-                    onDelete = { books ->
-                        val ids = books.map { it.id }
-                        if (player.book?.id in ids) {
-                            nowPlaying = false
-                            playerViewModel.closeBook()
-                        }
-                        libraryViewModel.delete(ids)
-                    },
-                    onUpdateMetadata = { id, title, author, narrator, chapters, cover ->
-                        libraryViewModel.updateMetadata(id, title, author, narrator, chapters, cover)
-                        val updated = (libraryViewModel.state.value.books +
-                            libraryViewModel.state.value.archivedBooks)
-                            .find { it.id == id }
-                        updated?.let(playerViewModel::patchDisplayedBook)
-                    },
-                    onChooseFolder = { pickFolder.launch(null) },
-                    onOpenBook = { book ->
-                        libraryViewModel.touchLastPlayed(book.id)
-                        playerViewModel.selectBook(book)
-                        nowPlaying = true
-                    },
-                    modifier = screenModifier,
-                )
-                TopLevelDestination.Stats -> StatsScreen(screenModifier)
-                TopLevelDestination.Settings -> SettingsScreen(
-                    appearance = appearance,
-                    onAppearanceChange = appearanceViewModel::setMode,
-                    folderPath = library.folderPath,
-                    onChooseFolder = { pickFolder.launch(null) },
-                    modifier = screenModifier,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
-        }
-
-        if (nowPlaying && player.book != null) {
-            NowPlayingScreen(
-                player = player,
-                onDismiss = { nowPlaying = false },
-                onTogglePlay = playerViewModel::togglePlay,
-                onSkip = playerViewModel::skip,
-                onSeek = playerViewModel::seek,
-                onSeekChapter = playerViewModel::seekToChapter,
-                onSetSpeed = playerViewModel::setSpeed,
-                onSetSleepTimer = playerViewModel::setSleepTimer,
-                onRestartChapter = playerViewModel::restartChapter,
-                onMarkChapterPlayed = playerViewModel::markChapterPlayed,
-                onMarkBookPlayed = playerViewModel::markBookPlayed,
-                onToggleRepeat = playerViewModel::toggleRepeat,
-                onCloseBook = {
-                    nowPlaying = false
-                    playerViewModel.closeBook()
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
         }
     }
 }

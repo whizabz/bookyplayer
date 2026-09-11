@@ -13,7 +13,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,8 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.input.clearText
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonGroupDefaults
@@ -39,59 +36,49 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExpandedFullScreenSearchBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconButtonShapes
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SegmentedListItem
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.booky.app.data.Audiobook
-import com.booky.app.data.MockLibrary
 import com.booky.app.data.formatDuration
 import com.booky.app.library.LibrarySort
 import com.booky.app.ui.components.BookCover
 import com.booky.app.ui.components.BookyIcons
 import com.booky.app.ui.components.SwipeToRevealActions
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LibraryScreen(
     books: List<Audiobook>,
-    archivedBooks: List<Audiobook>,
     onOpenBook: (Audiobook) -> Unit,
     modifier: Modifier = Modifier,
     activeBookId: String? = null,
@@ -100,72 +87,27 @@ fun LibraryScreen(
     hasFolder: Boolean = false,
     folderName: String? = null,
     scanning: Boolean = false,
-    showArchived: Boolean = false,
     sort: LibrarySort = LibrarySort.Manual,
-    onShowArchivedChange: (Boolean) -> Unit = {},
     onSortChange: (LibrarySort) -> Unit = {},
     onMarkPlayed: (List<Audiobook>) -> Unit = {},
-    onArchive: (List<Audiobook>, Boolean) -> Unit = { _, _ -> },
     onDelete: (List<Audiobook>) -> Unit = {},
     onUpdateMetadata: (String, String, String, String, List<String>, Bitmap?) -> Unit = { _, _, _, _, _, _ -> },
     onChooseFolder: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    bottomContentPadding: Dp = 24.dp,
 ) {
-    var addMenu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
     var revealedId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<List<Audiobook>?>(null) }
     var editingBook by remember { mutableStateOf<Audiobook?>(null) }
-    val searchBarState = rememberSearchBarState()
-    val searchQuery = rememberTextFieldState()
-    val scope = rememberCoroutineScope()
-    val query = searchQuery.text.toString()
-    val searchMatches = remember(books, archivedBooks, query) {
-        val pool = books + archivedBooks
-        if (query.isBlank()) {
-            pool
-        } else {
-            pool.filter { book ->
-                book.title.contains(query, ignoreCase = true) ||
-                    book.author.contains(query, ignoreCase = true) ||
-                    book.narrator.contains(query, ignoreCase = true)
-            }
-        }
-    }
-    val recents = if (hasFolder) {
-        emptyList()
-    } else {
-        MockLibrary.recentSearches.filter {
-            query.isBlank() || it.title.contains(query, ignoreCase = true)
-        }
-    }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val selectedBooks = (books + archivedBooks).filter { it.id in selectedIds }
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val selectedBooks = books.filter { it.id in selectedIds }
     BackHandler(enabled = selecting) {
         selecting = false
         selectedIds = emptySet()
         revealedId = null
-    }
-    val searchInput = @Composable {
-        SearchBarDefaults.InputField(
-            searchBarState = searchBarState,
-            textFieldState = searchQuery,
-            onSearch = { scope.launch { searchBarState.animateToCollapsed() } },
-            placeholder = { Text("Search library") },
-            leadingIcon = {
-                IconButton(onClick = { scope.launch { searchBarState.animateToCollapsed() } }) {
-                    Icon(BookyIcons.back, contentDescription = "Back")
-                }
-            },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery.clearText() }) {
-                        Icon(BookyIcons.close, contentDescription = "Clear")
-                    }
-                }
-            },
-        )
     }
 
     Scaffold(
@@ -175,7 +117,7 @@ fun LibraryScreen(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     val motion = MaterialTheme.motionScheme
                     val title = when {
@@ -192,7 +134,12 @@ fun LibraryScreen(
                         },
                         label = "library-title",
                     ) { text ->
-                        Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text,
+                            style = MaterialTheme.typography.displaySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 },
                 actions = {
@@ -232,20 +179,18 @@ fun LibraryScreen(
                                 Icon(BookyIcons.doneAll, contentDescription = "Mark as played")
                             }
                             IconButton(
-                                onClick = {
-                                    onArchive(selectedBooks, true)
-                                    selecting = false
-                                    selectedIds = emptySet()
-                                },
-                                enabled = selectedBooks.isNotEmpty(),
-                            ) {
-                                Icon(BookyIcons.archive, contentDescription = "Archive")
-                            }
-                            IconButton(
                                 onClick = { pendingDelete = selectedBooks },
                                 enabled = selectedBooks.isNotEmpty(),
                             ) {
                                 Icon(BookyIcons.delete, contentDescription = "Delete")
+                            }
+                            IconButton(
+                                onClick = {
+                                    selecting = false
+                                    selectedIds = emptySet()
+                                },
+                            ) {
+                                Icon(BookyIcons.close, contentDescription = "Cancel selection")
                             }
                         }
                     }
@@ -254,94 +199,38 @@ fun LibraryScreen(
                         enter = enterFromEnd,
                         exit = exitToEnd,
                     ) {
-                        IconButton(onClick = { scope.launch { searchBarState.animateToExpanded() } }) {
-                            Icon(BookyIcons.search, contentDescription = "Search")
-                        }
-                    }
-                    Box {
-                        AnimatedContent(
-                            targetState = selecting,
-                            transitionSpec = {
-                                fadeIn(motion.defaultEffectsSpec()) +
-                                    scaleIn(motion.fastSpatialSpec(), initialScale = 0.86f) togetherWith
-                                    fadeOut(motion.fastEffectsSpec()) +
-                                    scaleOut(motion.fastSpatialSpec(), targetScale = 0.86f)
-                            },
-                            label = "library-end-action",
-                        ) { inSelect ->
-                            if (inSelect) {
-                                IconButton(
-                                    onClick = {
-                                        selecting = false
-                                        selectedIds = emptySet()
-                                    },
-                                ) {
-                                    Icon(BookyIcons.close, contentDescription = "Cancel selection")
+                        Row {
+                            Box {
+                                IconButton(onClick = { sortMenu = true }) {
+                                    Icon(BookyIcons.sort, contentDescription = "Sort")
                                 }
-                            } else {
-                                IconButton(onClick = { addMenu = true }) {
-                                    Icon(BookyIcons.more, contentDescription = "More")
+                                DropdownMenu(
+                                    expanded = sortMenu,
+                                    onDismissRequest = { sortMenu = false },
+                                ) {
+                                    LibrarySort.entries.forEachIndexed { index, option ->
+                                        DropdownMenuItem(
+                                            selected = sort == option,
+                                            onClick = {
+                                                onSortChange(option)
+                                                sortMenu = false
+                                            },
+                                            text = { Text(option.label) },
+                                            shapes = MenuDefaults.itemShape(index, LibrarySort.entries.size),
+                                            selectedLeadingIcon = {
+                                                Icon(BookyIcons.check, contentDescription = null)
+                                            },
+                                        )
+                                    }
                                 }
                             }
-                        }
-                        DropdownMenu(expanded = addMenu, onDismissRequest = {
-                            addMenu = false
-                            sortMenu = false
-                        }) {
-                            if (sortMenu) {
-                                DropdownMenuItem(
-                                    text = { Text("Sort by") },
-                                    onClick = { sortMenu = false },
-                                    leadingIcon = { Icon(BookyIcons.back, contentDescription = null) },
-                                )
-                                HorizontalDivider()
-                                LibrarySort.entries.forEachIndexed { index, option ->
-                                    DropdownMenuItem(
-                                        selected = sort == option,
-                                        onClick = {
-                                            onSortChange(option)
-                                            addMenu = false
-                                            sortMenu = false
-                                        },
-                                        text = { Text(option.label) },
-                                        shapes = MenuDefaults.itemShape(index, LibrarySort.entries.size),
-                                        selectedLeadingIcon = {
-                                            Icon(BookyIcons.check, contentDescription = null)
-                                        },
-                                    )
-                                }
-                            } else {
-                                DropdownMenuItem(
-                                    text = { Text("Show archived") },
-                                    onClick = { onShowArchivedChange(!showArchived) },
-                                    trailingIcon = {
-                                        Switch(
-                                            checked = showArchived,
-                                            onCheckedChange = onShowArchivedChange,
-                                        )
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Select") },
-                                    onClick = {
-                                        addMenu = false
-                                        selecting = true
-                                        revealedId = null
-                                    },
-                                    leadingIcon = { Icon(BookyIcons.select, contentDescription = null) },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Sort by") },
-                                    onClick = { sortMenu = true },
-                                    leadingIcon = { Icon(BookyIcons.viewOptions, contentDescription = null) },
-                                    trailingIcon = {
-                                        Text(sort.label, color = MaterialTheme.colorScheme.primary)
-                                    },
-                                )
+                            IconButton(onClick = onOpenSettings) {
+                                Icon(BookyIcons.settings, contentDescription = "Settings")
                             }
                         }
                     }
                 },
+                expandedHeight = 88.dp,
                 windowInsets = WindowInsets(0),
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -351,7 +240,7 @@ fun LibraryScreen(
             )
         },
     ) { innerPadding ->
-        if (hasFolder && scanning && books.isEmpty() && archivedBooks.isEmpty()) {
+        if (hasFolder && scanning && books.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -377,10 +266,15 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 24.dp,
+                    bottom = bottomContentPadding,
+                ),
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
             ) {
-                if (scanning && (books.isNotEmpty() || archivedBooks.isNotEmpty())) {
+                if (scanning && books.isNotEmpty()) {
                     item("scanning") {
                         LinearProgressIndicator(
                             modifier = Modifier
@@ -404,7 +298,7 @@ fun LibraryScreen(
                             }
                         }
                     }
-                } else if (!scanning && books.isEmpty() && (!showArchived || archivedBooks.isEmpty())) {
+                } else if (!scanning && books.isEmpty()) {
                     item("empty") {
                         Text(
                             text = if (folderName != null) {
@@ -445,50 +339,8 @@ fun LibraryScreen(
                             revealedId = null
                         },
                         onEdit = { editingBook = book },
-                        onArchive = { onArchive(listOf(book), !book.archived) },
                         onDelete = { pendingDelete = listOf(book) },
                     )
-                }
-                if (showArchived && archivedBooks.isNotEmpty()) {
-                    item("archived-header") {
-                        Text(
-                            text = "Archived",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 12.dp),
-                        )
-                    }
-                    itemsIndexed(archivedBooks, key = { _, book -> "archived-${book.id}" }) { index, book ->
-                        LibraryBookRow(
-                            book = book,
-                            index = index,
-                            count = archivedBooks.size,
-                            progressOverride = if (book.id == activeBookId) playbackProgress else null,
-                            showWavyProgress = book.id == activeBookId && isPlaying,
-                            selecting = selecting,
-                            selected = book.id in selectedIds,
-                            revealed = revealedId == book.id,
-                            onRevealedChange = { open ->
-                                revealedId = if (open) book.id else if (revealedId == book.id) null else revealedId
-                            },
-                            onOpen = { onOpenBook(book) },
-                            onToggleSelect = {
-                                selectedIds = if (book.id in selectedIds) {
-                                    selectedIds - book.id
-                                } else {
-                                    selectedIds + book.id
-                                }
-                            },
-                            onEnterSelect = {
-                                selecting = true
-                                selectedIds = setOf(book.id)
-                                revealedId = null
-                            },
-                            onEdit = { editingBook = book },
-                            onArchive = { onArchive(listOf(book), false) },
-                            onDelete = { pendingDelete = listOf(book) },
-                        )
-                    }
                 }
             }
         }
@@ -533,65 +385,6 @@ fun LibraryScreen(
             },
         )
     }
-
-    ExpandedFullScreenSearchBar(
-        state = searchBarState,
-        inputField = searchInput,
-    ) {
-        if (recents.isNotEmpty()) {
-            Text(
-                text = "Recent",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            recents.forEach { item ->
-                val book = MockLibrary.bookById(item.bookId) ?: books.firstOrNull() ?: return@forEach
-                ListItem(
-                    headlineContent = { Text(item.title) },
-                    supportingContent = { Text("${item.subtitle} · ${item.durationLabel}") },
-                    leadingContent = { BookCover(book, Modifier.size(48.dp), corner = 10.dp) },
-                    trailingContent = { Icon(BookyIcons.play, contentDescription = "Play") },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            scope.launch { searchBarState.animateToCollapsed() }
-                            onOpenBook(book)
-                        },
-                )
-            }
-        }
-        if (searchMatches.isNotEmpty()) {
-            Text(
-                text = "Library",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            searchMatches.forEach { book ->
-                ListItem(
-                    headlineContent = { Text(book.title) },
-                    supportingContent = { Text("${book.author} · ${book.narrator}") },
-                    leadingContent = { BookCover(book, Modifier.size(48.dp), corner = 10.dp) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            scope.launch { searchBarState.animateToCollapsed() }
-                            onOpenBook(book)
-                        },
-                )
-            }
-        } else {
-            Text(
-                "No matching titles",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
-            )
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -610,7 +403,6 @@ private fun LibraryBookRow(
     onToggleSelect: () -> Unit,
     onEnterSelect: () -> Unit,
     onEdit: () -> Unit,
-    onArchive: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -622,7 +414,7 @@ private fun LibraryBookRow(
         enabled = !selecting,
         shape = itemShapes.shape,
         actionWidth = actionWidth,
-        actionCount = 3,
+        actionCount = 2,
         actions = {
             FilledTonalIconButton(
                 onClick = {
@@ -642,25 +434,6 @@ private fun LibraryBookRow(
                     .width(actionWidth),
             ) {
                 Icon(BookyIcons.edit, contentDescription = "Edit")
-            }
-            FilledTonalIconButton(
-                onClick = {
-                    onRevealedChange(false)
-                    onArchive()
-                },
-                shapes = IconButtonShapes(
-                    shape = ButtonGroupDefaults.connectedMiddleButtonShapes().shape,
-                    pressedShape = ButtonGroupDefaults.connectedMiddleButtonPressShape,
-                ),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = colors.secondaryContainer,
-                    contentColor = colors.onSecondaryContainer,
-                ),
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(actionWidth),
-            ) {
-                Icon(BookyIcons.archive, contentDescription = if (book.archived) "Unarchive" else "Archive")
             }
             FilledTonalIconButton(
                 onClick = {

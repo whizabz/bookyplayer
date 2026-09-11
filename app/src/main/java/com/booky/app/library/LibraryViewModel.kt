@@ -30,10 +30,8 @@ data class LibraryUiState(
     val folderName: String? = null,
     val folderPath: String? = null,
     val books: List<Audiobook> = emptyList(),
-    val archivedBooks: List<Audiobook> = emptyList(),
     val playQueue: List<Audiobook> = emptyList(),
     val scanning: Boolean = false,
-    val showArchived: Boolean = false,
     val sort: LibrarySort = LibrarySort.Manual,
 )
 
@@ -42,7 +40,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val scanner = LibraryScanner(application)
     private var scanned = emptyList<Audiobook>()
     private val hiddenIds = prefs.getStringSet(KEY_HIDDEN, emptySet())!!.toMutableSet()
-    private val archivedIds = prefs.getStringSet(KEY_ARCHIVED, emptySet())!!.toMutableSet()
     private val lastPlayed = loadLongMap(KEY_LAST_PLAYED)
     private val listened = loadLongMap(KEY_LISTENED)
     private val manualOrder = prefs.getString(KEY_MANUAL_ORDER, "")
@@ -55,7 +52,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _state = MutableStateFlow(
         LibraryUiState(
             folderUri = prefs.getString(KEY_FOLDER_URI, null),
-            showArchived = prefs.getBoolean(KEY_SHOW_ARCHIVED, false),
             sort = LibrarySort.entries.getOrElse(prefs.getInt(KEY_SORT, 0)) { LibrarySort.Manual },
         ),
     )
@@ -80,7 +76,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
             state.copy(
                 books = state.books.withProgress(),
-                archivedBooks = state.archivedBooks.withProgress(),
                 playQueue = state.playQueue.withProgress(),
             )
         }
@@ -103,7 +98,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
         prefs.edit().putString(KEY_FOLDER_URI, uri.toString()).apply()
         scanned = emptyList()
-        _state.value = _state.value.copy(folderUri = uri.toString(), books = emptyList(), archivedBooks = emptyList())
+        _state.value = _state.value.copy(folderUri = uri.toString(), books = emptyList())
         refreshFolderName(uri)
         scan()
     }
@@ -124,12 +119,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun setShowArchived(show: Boolean) {
-        prefs.edit().putBoolean(KEY_SHOW_ARCHIVED, show).apply()
-        _state.update { it.copy(showArchived = show) }
-        publishBooks()
-    }
-
     fun setSort(sort: LibrarySort) {
         prefs.edit().putInt(KEY_SORT, sort.ordinal).apply()
         _state.update { it.copy(sort = sort) }
@@ -146,16 +135,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val durationById = (scanned).associate { it.id to it.durationMs }
         ids.forEach { id ->
             listened[id] = durationById[id] ?: scanned.firstOrNull { it.id == id }?.durationMs ?: 0L
-            archivedIds.remove(id)
         }
         persistLongMap(KEY_LISTENED, listened)
-        persistIds(KEY_ARCHIVED, archivedIds)
-        publishBooks()
-    }
-
-    fun archive(ids: Collection<String>, archived: Boolean) {
-        if (archived) archivedIds += ids else archivedIds -= ids.toSet()
-        persistIds(KEY_ARCHIVED, archivedIds)
         publishBooks()
     }
 
@@ -163,7 +144,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val app = getApplication<Application>()
         ids.forEach { id ->
             hiddenIds += id
-            archivedIds.remove(id)
             lastPlayed.remove(id)
             listened.remove(id)
             metadata.remove(id)
@@ -179,7 +159,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         persistIds(KEY_HIDDEN, hiddenIds)
-        persistIds(KEY_ARCHIVED, archivedIds)
         persistLongMap(KEY_LAST_PLAYED, lastPlayed)
         persistLongMap(KEY_LISTENED, listened)
         persistMetadata()
@@ -228,20 +207,17 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     coverUri = customCover ?: book.coverUri,
                     listenedMs = listened[book.id] ?: book.listenedMs,
                     lastPlayedMs = lastPlayed[book.id] ?: 0L,
-                    archived = book.id in archivedIds,
                 )
             }
         val known = decorated.map { it.id }
         known.filter { it !in manualOrder }.forEach { manualOrder += it }
         manualOrder.removeAll { it !in known }
         prefs.edit().putString(KEY_MANUAL_ORDER, manualOrder.joinToString(",")).apply()
-        val active = sortBooks(decorated.filterNot { it.archived })
-        val archived = sortBooks(decorated.filter { it.archived })
+        val books = sortBooks(decorated)
         _state.update {
             it.copy(
-                books = active,
-                archivedBooks = archived,
-                playQueue = active,
+                books = books,
+                playQueue = books,
                 scanning = scanning,
             )
         }
@@ -336,12 +312,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private companion object {
         const val KEY_FOLDER_URI = "library_folder_uri"
         const val KEY_HIDDEN = "library_hidden_ids"
-        const val KEY_ARCHIVED = "library_archived_ids"
         const val KEY_LAST_PLAYED = "library_last_played"
         const val KEY_LISTENED = "library_listened"
         const val KEY_METADATA = "library_metadata"
         const val KEY_MANUAL_ORDER = "library_manual_order"
-        const val KEY_SHOW_ARCHIVED = "library_show_archived"
         const val KEY_SORT = "library_sort"
     }
 }
