@@ -213,17 +213,22 @@ fun LibraryScreen(
                                     onDismissRequest = { sortMenu = false },
                                     shape = MenuDefaults.shape,
                                 ) {
-                                    LibrarySort.entries.forEachIndexed { index, option ->
+                                    LibrarySort.entries.forEach { option ->
                                         DropdownMenuItem(
-                                            selected = sort == option,
+                                            text = { Text(option.label) },
                                             onClick = {
                                                 onSortChange(option)
                                                 sortMenu = false
                                             },
-                                            text = { Text(option.label) },
-                                            shapes = MenuDefaults.itemShape(index, LibrarySort.entries.size),
-                                            selectedLeadingIcon = {
-                                                Icon(BookyIcons.check, contentDescription = null)
+                                            trailingIcon = if (sort == option) {
+                                                {
+                                                    Icon(
+                                                        BookyIcons.check,
+                                                        contentDescription = null,
+                                                    )
+                                                }
+                                            } else {
+                                                null
                                             },
                                         )
                                     }

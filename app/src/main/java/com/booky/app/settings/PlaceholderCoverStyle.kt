@@ -13,7 +13,7 @@ data class PlaceholderCoverStyle(
 
 enum class PlaceholderFont(val label: String) {
     Serif("Serif"),
-    Sans("Sans"),
+    Sans("Sans serif"),
 }
 
 data class PlaceholderShapeOption(

@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MotionScheme
@@ -17,6 +18,7 @@ import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -24,6 +26,8 @@ import com.booky.app.data.Audiobook
 import com.booky.app.settings.AppearanceMode
 import com.booky.app.settings.ColorTheme
 import com.booky.app.settings.PlaceholderCoverStyle
+
+val LocalSystemColorScheme = compositionLocalOf { darkColorScheme() }
 
 val BookyCoverOuter = Color(0xFF2A1018)
 val BookyCoverInner = Color(0xFF8B3A48)
@@ -72,7 +76,10 @@ fun BookyTheme(
             ) { _ -> darkTheme },
         )
     }
-    CompositionLocalProvider(LocalPlaceholderCoverStyle provides placeholderCover) {
+    CompositionLocalProvider(
+        LocalPlaceholderCoverStyle provides placeholderCover,
+        LocalSystemColorScheme provides systemScheme,
+    ) {
         MaterialExpressiveTheme(
             colorScheme = colorScheme,
             motionScheme = MotionScheme.expressive(),

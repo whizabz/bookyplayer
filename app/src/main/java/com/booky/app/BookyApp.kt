@@ -110,7 +110,12 @@ fun BookyApp(
             showingSettings = false
         }
         BackHandler(enabled = detailBookId != null && !showingSettings) { detailBookId = null }
-        val miniPlayerClearance = if (player.book != null) 104.dp else 0.dp
+        val miniPlayerClearance =
+            if (player.book != null && !showingSettings && !showingPlaceholderCover) {
+                104.dp
+            } else {
+                0.dp
+            }
         val playBook: (Audiobook) -> Unit = { book ->
             if (player.book?.id == book.id) {
                 playerViewModel.togglePlay()
@@ -301,7 +306,7 @@ fun BookyApp(
             }
 
             val book = player.book
-            if (book != null) {
+            if (book != null && !showingSettings && !showingPlaceholderCover) {
                 NowPlayingScreen(
                     player = player,
                     expanded = nowPlaying,

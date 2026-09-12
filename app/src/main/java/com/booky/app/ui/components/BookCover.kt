@@ -21,10 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -32,11 +30,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.ColorUtils
 import com.booky.app.data.Audiobook
 import com.booky.app.library.CoverLoader
 import com.booky.app.settings.PlaceholderCoverStyle
 import com.booky.app.theme.LocalPlaceholderCoverStyle
+import com.booky.app.theme.LocalSystemColorScheme
 import com.booky.app.theme.placeholderFontFamily
 import com.booky.app.theme.placeholderPolygon
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +67,7 @@ fun BookCover(
         modifier = modifier
             .then(if (square) Modifier.aspectRatio(1f, matchHeightConstraintsFirst = false) else Modifier)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            .background(LocalSystemColorScheme.current.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {
         val image = load.bitmap
@@ -94,25 +92,12 @@ fun EditorialCover(
     style: PlaceholderCoverStyle = LocalPlaceholderCoverStyle.current,
     showTitle: Boolean = true,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val hash = seed.hashCode() and Int.MAX_VALUE
-    val palettes = listOf(
-        colors.primaryContainer,
-        colors.secondaryContainer,
-        colors.tertiaryContainer,
-        colors.primary,
-        colors.secondary,
-        colors.tertiary,
-    )
+    val colors = LocalSystemColorScheme.current
     val polygon = placeholderPolygon(style.shapeId, seed)
-    val fill = palettes[hash % palettes.size]
-    val shapeFill = palettes[(hash / palettes.size) % palettes.size]
-    val blobColor = if (shapeFill == fill) fill else shapeFill
-    val ink = remember(blobColor) { editorialInk(blobColor) }
     val family = remember(style.font, style.weight) {
         placeholderFontFamily(style)
     }
-    BoxWithConstraints(modifier.fillMaxSize().background(fill)) {
+    BoxWithConstraints(modifier.fillMaxSize().background(colors.primaryContainer)) {
         val compact = maxWidth < 56.dp
         val blob = maxWidth * 0.82f
         Box(
@@ -120,12 +105,12 @@ fun EditorialCover(
                 .align(Alignment.Center)
                 .size(blob)
                 .clip(polygon.toShape())
-                .background(shapeFill.copy(alpha = if (shapeFill == fill) 0.35f else 0.88f)),
+                .background(colors.primary),
         )
         if (showTitle) {
             Text(
                 text = if (compact) editorialInitials(title) else title,
-                color = ink,
+                color = colors.onPrimary,
                 fontFamily = family,
                 fontSize = if (compact) 16.sp else (maxWidth.value * 0.13f).coerceIn(14f, 34f).sp,
                 lineHeight = if (compact) 18.sp else (maxWidth.value * 0.15f).coerceIn(16f, 38f).sp,
@@ -139,28 +124,6 @@ fun EditorialCover(
             )
         }
     }
-}
-
-private fun editorialInk(background: Color): Color {
-    val hsl = FloatArray(3)
-    ColorUtils.colorToHSL(background.toArgb(), hsl)
-    val lightBackground = ColorUtils.calculateLuminance(background.toArgb()) > 0.35
-    hsl[1] = if (lightBackground) {
-        hsl[1].coerceIn(0.28f, 0.72f)
-    } else {
-        hsl[1].coerceAtLeast(0.12f)
-    }
-    var lightness = if (lightBackground) 0.22f else 0.90f
-    var ink = Color.Unspecified
-    repeat(10) {
-        hsl[2] = lightness.coerceIn(0.08f, 0.96f)
-        ink = Color(ColorUtils.HSLToColor(hsl))
-        if (ColorUtils.calculateContrast(ink.toArgb(), background.toArgb()) >= 4.5) {
-            return ink
-        }
-        lightness = if (lightBackground) lightness - 0.05f else lightness + 0.04f
-    }
-    return ink
 }
 
 private fun editorialInitials(title: String): String {
