@@ -19,7 +19,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class LibrarySort(val label: String) {
-    Manual("Manual"),
     LastPlayed("Last played"),
     DateAdded("Date added"),
     Alphabetical("Alphabetical"),
@@ -32,36 +31,41 @@ data class LibraryUiState(
     val books: List<Audiobook> = emptyList(),
     val playQueue: List<Audiobook> = emptyList(),
     val scanning: Boolean = false,
-    val sort: LibrarySort = LibrarySort.Manual,
+    val sort: LibrarySort = LibrarySort.Alphabetical,
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("booky_prefs", 0)
     private val scanner = LibraryScanner(application)
     private var scanned = emptyList<Audiobook>()
+    private var fileFingerprints = emptyMap<String, String>()
+    private var treeFingerprint: String? = null
     private val hiddenIds = prefs.getStringSet(KEY_HIDDEN, emptySet())!!.toMutableSet()
     private val lastPlayed = loadLongMap(KEY_LAST_PLAYED)
     private val listened = loadLongMap(KEY_LISTENED)
-    private val manualOrder = prefs.getString(KEY_MANUAL_ORDER, "")
-        .orEmpty()
-        .split(',')
-        .filter { it.isNotBlank() }
-        .toMutableList()
     private val metadata = loadMetadata()
 
     private val _state = MutableStateFlow(
         LibraryUiState(
             folderUri = prefs.getString(KEY_FOLDER_URI, null),
-            sort = LibrarySort.entries.getOrElse(prefs.getInt(KEY_SORT, 0)) { LibrarySort.Manual },
+            sort = loadSort(),
         ),
     )
     val state: StateFlow<LibraryUiState> = _state
 
     init {
         seedProgressFromLastSession()
-        _state.value.folderUri?.let { uri ->
-            refreshFolderName(Uri.parse(uri))
-            scan()
+        val folderUri = _state.value.folderUri
+        if (folderUri != null) {
+            refreshFolderName(Uri.parse(folderUri))
+            val catalog = LibraryCatalogStore.load(getApplication())
+            if (catalog != null && catalog.folderUri == folderUri) {
+                scanned = catalog.books
+                fileFingerprints = catalog.fileFingerprints
+                treeFingerprint = catalog.treeFingerprint
+                publishBooks(scanning = false)
+            }
+            scan(force = false)
         }
     }
 
@@ -98,29 +102,63 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
         prefs.edit().putString(KEY_FOLDER_URI, uri.toString()).apply()
         scanned = emptyList()
+        fileFingerprints = emptyMap()
+        treeFingerprint = null
+        LibraryCatalogStore.clear(getApplication())
         _state.value = _state.value.copy(folderUri = uri.toString(), books = emptyList())
         refreshFolderName(uri)
-        scan()
+        scan(force = true)
     }
 
-    fun scan() {
+    fun scan(force: Boolean = true) {
         val uri = _state.value.folderUri ?: return
-        _state.value = _state.value.copy(scanning = true)
+        val showSpinner = force || scanned.isEmpty()
+        if (showSpinner) {
+            _state.value = _state.value.copy(scanning = true)
+        }
         viewModelScope.launch {
-            val books = withContext(Dispatchers.IO) {
+            val tree = Uri.parse(uri)
+            val snapshotBooks = scanned
+            val snapshotPrints = fileFingerprints
+            val storedFingerprint = treeFingerprint
+            val result = withContext(Dispatchers.IO) {
                 try {
-                    scanner.scan(Uri.parse(uri))
+                    if (!force && snapshotBooks.isNotEmpty() && storedFingerprint != null) {
+                        val fingerprint = scanner.treeFingerprint(tree)
+                        if (fingerprint == storedFingerprint) {
+                            return@withContext LibraryScanResult(
+                                fingerprint,
+                                snapshotBooks,
+                                snapshotPrints,
+                            )
+                        }
+                    }
+                    scanner.scan(
+                        tree,
+                        snapshotBooks.mapNotNull { book ->
+                            val print = snapshotPrints[book.id] ?: return@mapNotNull null
+                            book.id to (book to print)
+                        }.toMap(),
+                    )
                 } catch (_: SecurityException) {
-                    emptyList()
+                    LibraryScanResult("", emptyList(), emptyMap())
                 }
             }
-            scanned = books
+            scanned = result.books
+            fileFingerprints = result.fileFingerprints
+            treeFingerprint = result.treeFingerprint.ifBlank { treeFingerprint }
+            if (result.books.isNotEmpty() && result.treeFingerprint.isNotBlank()) {
+                LibraryCatalogStore.save(
+                    getApplication(),
+                    LibraryCatalog(uri, result.treeFingerprint, result.books, result.fileFingerprints),
+                )
+            }
             publishBooks(scanning = false)
         }
     }
 
     fun setSort(sort: LibrarySort) {
-        prefs.edit().putInt(KEY_SORT, sort.ordinal).apply()
+        prefs.edit().putString(KEY_SORT, sort.name).apply()
         _state.update { it.copy(sort = sort) }
         publishBooks()
     }
@@ -147,7 +185,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             lastPlayed.remove(id)
             listened.remove(id)
             metadata.remove(id)
-            manualOrder.remove(id)
             CoverStore.delete(app, id)
             val uri = Uri.parse(id)
             val file = DocumentFile.fromSingleUri(app, uri)
@@ -162,7 +199,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         persistLongMap(KEY_LAST_PLAYED, lastPlayed)
         persistLongMap(KEY_LISTENED, listened)
         persistMetadata()
-        prefs.edit().putString(KEY_MANUAL_ORDER, manualOrder.joinToString(",")).apply()
         publishBooks()
     }
 
@@ -209,10 +245,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     lastPlayedMs = lastPlayed[book.id] ?: 0L,
                 )
             }
-        val known = decorated.map { it.id }
-        known.filter { it !in manualOrder }.forEach { manualOrder += it }
-        manualOrder.removeAll { it !in known }
-        prefs.edit().putString(KEY_MANUAL_ORDER, manualOrder.joinToString(",")).apply()
         val books = sortBooks(decorated)
         _state.update {
             it.copy(
@@ -225,13 +257,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private fun sortBooks(books: List<Audiobook>): List<Audiobook> {
         return when (_state.value.sort) {
-            LibrarySort.Manual -> {
-                val order = manualOrder.withIndex().associate { it.value to it.index }
-                books.sortedBy { order[it.id] ?: Int.MAX_VALUE }
-            }
             LibrarySort.LastPlayed -> books.sortedByDescending { it.lastPlayedMs }
             LibrarySort.DateAdded -> books.sortedByDescending { it.addedAtMs }
             LibrarySort.Alphabetical -> books.sortedBy { it.title.lowercase() }
+        }
+    }
+
+    private fun loadSort(): LibrarySort {
+        val named = runCatching { prefs.getString(KEY_SORT, null) }.getOrNull()
+        when (named) {
+            LibrarySort.LastPlayed.name -> return LibrarySort.LastPlayed
+            LibrarySort.DateAdded.name -> return LibrarySort.DateAdded
+            LibrarySort.Alphabetical.name -> return LibrarySort.Alphabetical
+        }
+        val ordinal = runCatching { prefs.getInt(KEY_SORT, -1) }.getOrDefault(-1)
+        return when (ordinal) {
+            1 -> LibrarySort.LastPlayed
+            2 -> LibrarySort.DateAdded
+            else -> LibrarySort.Alphabetical
         }
     }
 
@@ -315,7 +358,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         const val KEY_LAST_PLAYED = "library_last_played"
         const val KEY_LISTENED = "library_listened"
         const val KEY_METADATA = "library_metadata"
-        const val KEY_MANUAL_ORDER = "library_manual_order"
         const val KEY_SORT = "library_sort"
     }
 }

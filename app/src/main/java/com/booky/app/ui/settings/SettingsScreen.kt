@@ -21,6 +21,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.booky.app.settings.AppearanceMode
+import com.booky.app.settings.ColorTheme
 import com.booky.app.ui.components.BookyIcons
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -42,8 +44,19 @@ import com.booky.app.ui.components.BookyIcons
 fun SettingsScreen(
     appearance: AppearanceMode,
     onAppearanceChange: (AppearanceMode) -> Unit,
+    colorTheme: ColorTheme = ColorTheme.Book,
+    onColorThemeChange: (ColorTheme) -> Unit = {},
+    skipBackSeconds: Int = 10,
+    skipForwardSeconds: Int = 10,
+    onSkipBackSecondsChange: (Int) -> Unit = {},
+    onSkipForwardSecondsChange: (Int) -> Unit = {},
+    smartResumeEnabled: Boolean = false,
+    smartResumeSeconds: Int = 5,
+    onSmartResumeEnabledChange: (Boolean) -> Unit = {},
+    onSmartResumeSecondsChange: (Int) -> Unit = {},
     folderPath: String? = null,
     onChooseFolder: () -> Unit = {},
+    onOpenPlaceholderCover: () -> Unit = {},
     onBack: () -> Unit = {},
     bottomContentPadding: Dp = 16.dp,
     modifier: Modifier = Modifier,
@@ -80,9 +93,9 @@ fun SettingsScreen(
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = bottomContentPadding),
+                .padding(top = 8.dp, bottom = bottomContentPadding),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionLabel("Library")
             Card(modifier = Modifier.fillMaxWidth()) {
                 ListItem(
                     headlineContent = { Text("Audiobook folder") },
@@ -98,7 +111,6 @@ fun SettingsScreen(
                 )
             }
 
-            SectionLabel("Preferences")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(bottom = 16.dp)) {
                     ListItem(
@@ -136,6 +148,123 @@ fun SettingsScreen(
                             }
                         }
                     }
+                    ListItem(
+                        headlineContent = { Text("Theme") },
+                        supportingContent = {
+                            Text("System uses device colors. Book follows cover art")
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    val themes = ColorTheme.entries
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            ButtonGroupDefaults.ConnectedSpaceBetween,
+                        ),
+                    ) {
+                        themes.forEachIndexed { index, theme ->
+                            ToggleButton(
+                                checked = colorTheme == theme,
+                                onCheckedChange = { checked ->
+                                    if (checked) onColorThemeChange(theme)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics { role = Role.RadioButton },
+                                shapes = when (index) {
+                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                    themes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                },
+                            ) {
+                                Text(theme.name, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                ListItem(
+                    headlineContent = { Text("Placeholder covers") },
+                    supportingContent = {
+                        Text("Look for books without artwork")
+                    },
+                    trailingContent = { Icon(BookyIcons.chevronRight, contentDescription = null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable(onClick = onOpenPlaceholderCover),
+                )
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(bottom = 16.dp)) {
+                    ListItem(
+                        headlineContent = { Text("Seek back") },
+                        supportingContent = { Text("Playback controls jump backward") },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    SeekPresetButtons(
+                        selected = skipBackSeconds,
+                        onSelect = onSkipBackSecondsChange,
+                    )
+                    ListItem(
+                        headlineContent = { Text("Seek ahead") },
+                        supportingContent = { Text("Playback controls jump forward") },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    SeekPresetButtons(
+                        selected = skipForwardSeconds,
+                        onSelect = onSkipForwardSecondsChange,
+                    )
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(bottom = 16.dp)) {
+                    ListItem(
+                        headlineContent = { Text("Smart resume") },
+                        supportingContent = {
+                            Text("If paused more than 30 seconds, rewind a little before playing")
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = smartResumeEnabled,
+                                onCheckedChange = onSmartResumeEnabledChange,
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    val rewindOptions = listOf(3, 5, 10)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            ButtonGroupDefaults.ConnectedSpaceBetween,
+                        ),
+                    ) {
+                        rewindOptions.forEachIndexed { index, seconds ->
+                            ToggleButton(
+                                checked = smartResumeSeconds == seconds,
+                                onCheckedChange = { checked ->
+                                    if (checked) onSmartResumeSecondsChange(seconds)
+                                },
+                                enabled = smartResumeEnabled,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics { role = Role.RadioButton },
+                                shapes = when (index) {
+                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                    rewindOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                },
+                            ) {
+                                Text("${seconds}s", maxLines = 1)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -149,12 +278,39 @@ fun SettingsScreen(
     }
 }
 
+private val SeekPresets = listOf(5, 10, 15, 20, 30, 60)
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp, start = 4.dp),
-    )
+private fun SeekPresetButtons(
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(
+            ButtonGroupDefaults.ConnectedSpaceBetween,
+        ),
+    ) {
+        SeekPresets.forEachIndexed { index, seconds ->
+            ToggleButton(
+                checked = selected == seconds,
+                onCheckedChange = { checked ->
+                    if (checked) onSelect(seconds)
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { role = Role.RadioButton },
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    SeekPresets.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+            ) {
+                Text("${seconds}s", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
 }

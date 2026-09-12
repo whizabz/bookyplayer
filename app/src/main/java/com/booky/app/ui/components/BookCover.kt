@@ -4,28 +4,45 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.graphics.ColorUtils
 import com.booky.app.data.Audiobook
 import com.booky.app.library.CoverLoader
-import com.booky.app.theme.BookyCoverOuter
+import com.booky.app.settings.PlaceholderCoverStyle
+import com.booky.app.theme.LocalPlaceholderCoverStyle
+import com.booky.app.theme.placeholderFontFamily
+import com.booky.app.theme.placeholderPolygon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private data class CoverLoad(val ready: Boolean, val bitmap: Bitmap?)
 
 @Composable
 fun BookCover(
@@ -36,35 +53,118 @@ fun BookCover(
     shape: Shape = RoundedCornerShape(corner),
 ) {
     val context = LocalContext.current
-    val bitmap by produceState<Bitmap?>(
-        initialValue = null,
+    val load by produceState(
+        initialValue = CoverLoad(ready = false, bitmap = null),
         key1 = book.id,
         key2 = book.coverUri,
         key3 = "${book.artworkFileUri}:${book.coverRes}",
     ) {
-        value = withContext(Dispatchers.IO) { CoverLoader.load(context, book) }
+        value = CoverLoad(ready = false, bitmap = null)
+        value = CoverLoad(
+            ready = true,
+            bitmap = withContext(Dispatchers.IO) { CoverLoader.load(context, book) },
+        )
     }
     Box(
         modifier = modifier
             .then(if (square) Modifier.aspectRatio(1f, matchHeightConstraintsFirst = false) else Modifier)
             .clip(shape)
-            .background(BookyCoverOuter),
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {
-        val image = bitmap
-        if (image != null) {
-            Image(
+        val image = load.bitmap
+        when {
+            image != null -> Image(
                 bitmap = image.asImageBitmap(),
                 contentDescription = book.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-        } else {
+            load.ready -> EditorialCover(title = book.title, seed = book.id)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun EditorialCover(
+    title: String,
+    seed: String,
+    modifier: Modifier = Modifier,
+    style: PlaceholderCoverStyle = LocalPlaceholderCoverStyle.current,
+    showTitle: Boolean = true,
+) {
+    val colors = MaterialTheme.colorScheme
+    val hash = seed.hashCode() and Int.MAX_VALUE
+    val palettes = listOf(
+        colors.primaryContainer,
+        colors.secondaryContainer,
+        colors.tertiaryContainer,
+        colors.primary,
+        colors.secondary,
+        colors.tertiary,
+    )
+    val polygon = placeholderPolygon(style.shapeId, seed)
+    val fill = palettes[hash % palettes.size]
+    val shapeFill = palettes[(hash / palettes.size) % palettes.size]
+    val blobColor = if (shapeFill == fill) fill else shapeFill
+    val ink = remember(blobColor) { editorialInk(blobColor) }
+    val family = remember(style.font, style.weight) {
+        placeholderFontFamily(style)
+    }
+    BoxWithConstraints(modifier.fillMaxSize().background(fill)) {
+        val compact = maxWidth < 56.dp
+        val blob = maxWidth * 0.82f
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(blob)
+                .clip(polygon.toShape())
+                .background(shapeFill.copy(alpha = if (shapeFill == fill) 0.35f else 0.88f)),
+        )
+        if (showTitle) {
             Text(
-                text = book.title.take(1).uppercase(),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onPrimary,
+                text = if (compact) editorialInitials(title) else title,
+                color = ink,
+                fontFamily = family,
+                fontSize = if (compact) 16.sp else (maxWidth.value * 0.13f).coerceIn(14f, 34f).sp,
+                lineHeight = if (compact) 18.sp else (maxWidth.value * 0.15f).coerceIn(16f, 38f).sp,
+                letterSpacing = if (compact) 0.sp else (-0.6).sp,
+                textAlign = TextAlign.Center,
+                maxLines = if (compact) 1 else 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = if (compact) 4.dp else 10.dp),
             )
         }
     }
+}
+
+private fun editorialInk(background: Color): Color {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(background.toArgb(), hsl)
+    val lightBackground = ColorUtils.calculateLuminance(background.toArgb()) > 0.35
+    hsl[1] = if (lightBackground) {
+        hsl[1].coerceIn(0.28f, 0.72f)
+    } else {
+        hsl[1].coerceAtLeast(0.12f)
+    }
+    var lightness = if (lightBackground) 0.22f else 0.90f
+    var ink = Color.Unspecified
+    repeat(10) {
+        hsl[2] = lightness.coerceIn(0.08f, 0.96f)
+        ink = Color(ColorUtils.HSLToColor(hsl))
+        if (ColorUtils.calculateContrast(ink.toArgb(), background.toArgb()) >= 4.5) {
+            return ink
+        }
+        lightness = if (lightBackground) lightness - 0.05f else lightness + 0.04f
+    }
+    return ink
+}
+
+private fun editorialInitials(title: String): String {
+    val parts = title.split(Regex("[\\s—–-]+")).filter { it.isNotBlank() }
+    if (parts.isEmpty()) return "?"
+    return parts.take(2).joinToString("") { it.first().uppercase() }
 }

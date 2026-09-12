@@ -2,6 +2,7 @@ package com.booky.app.player
 
 import android.app.Application
 import android.content.ComponentName
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -36,24 +37,33 @@ data class PlayerUiState(
     val sleepTimer: SleepTimer? = null,
     val repeatEnabled: Boolean = false,
     val finished: Boolean = false,
+    val smartResumeEnabled: Boolean = false,
+    val smartResumeSeconds: Int = 5,
+    val skipBackSeconds: Int = 10,
+    val skipForwardSeconds: Int = 10,
+    val completedChapters: Set<Int> = emptySet(),
+    val chapterMarksEpoch: Int = 0,
+)
+
+data class ChapterMarksSnapshot(
+    val completed: Set<Int>,
+    val progress: Map<Int, Long>,
 )
 
 sealed interface SleepTimer {
     data class Minutes(val minutes: Int) : SleepTimer
     data class EndOfChapters(val chapters: Int) : SleepTimer
-    data object EndOfBook : SleepTimer
 
     val chipLabel: String
         get() = when (this) {
             is Minutes -> "${minutes}m"
             is EndOfChapters -> if (chapters == 1) "Ch" else "${chapters}ch"
-            EndOfBook -> "End"
         }
 }
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("booky_prefs", 0)
-    private val _state = MutableStateFlow(PlayerUiState())
+    private val _state = MutableStateFlow(initialState())
     val state: StateFlow<PlayerUiState> = _state
 
     private var controller: MediaController? = null
@@ -63,15 +73,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var lastPersistAt = 0L
     private var playWhenReadyAfterConnect = false
     private val chapterProgress = mutableMapOf<Int, Long>()
+    private val completedChapters = mutableSetOf<Int>()
     private var sleepUntilMediaIndex: Int? = null
-    private var queue: List<Audiobook> = emptyList()
-    private var handledEndId: String? = null
+    private var pausedAtElapsedMs = 0L
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             publishFromPlayer()
             if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
-                if (player.isPlaying) startPositionUpdates() else {
+                if (player.isPlaying) {
+                    applySmartResume()
+                    startPositionUpdates()
+                } else {
+                    pausedAtElapsedMs = SystemClock.elapsedRealtime()
                     positionJob?.cancel()
                     persist()
                 }
@@ -84,6 +98,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun selectBook(book: Audiobook, play: Boolean = false) {
+        pausedAtElapsedMs = 0L
         val sameBook = _state.value.book?.id == book.id
         if (sameBook) {
             _state.update { current ->
@@ -120,9 +135,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         loadChapterProgress(book.id)
+        loadCompletedChapters(book, bookPosition)
         persist(captureChapter = false)
-        handledEndId = null
         loadCurrentBook(playWhenReady = play, resetPosition = true)
+    }
+
+    fun playFromChapter(book: Audiobook, index: Int) {
+        if (_state.value.book?.id != book.id) {
+            selectBook(book, play = true)
+        }
+        seekToChapter(index)
+        val player = controller
+        if (player == null) {
+            playWhenReadyAfterConnect = true
+            return
+        }
+        player.playWhenReady = true
+        player.play()
     }
 
     fun patchDisplayedBook(book: Audiobook) {
@@ -141,7 +170,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun bindLibrary(books: List<Audiobook>) {
-        queue = books
         val current = _state.value.book
         if (current != null) {
             val match = books.find { it.id == current.id } ?: return
@@ -238,11 +266,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         persist()
     }
 
-    fun markChapterPlayed() {
+    fun markChapterPlayed(includePrevious: Boolean = false) {
         val player = controller ?: return
         rememberCurrentChapter()
         persistChapterProgress()
         val index = player.currentMediaItemIndex
+        val complete = if (includePrevious) (0..index).toSet() else setOf(index)
+        markChaptersComplete(complete)
         val last = (player.mediaItemCount - 1).coerceAtLeast(0)
         if (index >= last) {
             markBookPlayed()
@@ -255,15 +285,89 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun markBookPlayed() {
-        handledEndId = _state.value.book?.id
         val player = controller
         val duration = player?.bookDurationMs(_state.value.bookDurationMs)
             ?: _state.value.bookDurationMs
+        val count = _state.value.book?.chapterCountForMarks() ?: 1
+        markChaptersComplete((0 until count).toSet())
         player?.pause()
         player?.seekToBookPosition(duration, _state.value.book?.chapterDurationsMs.orEmpty())
         publishFromPlayer()
         _state.update { it.copy(finished = true, isPlaying = false) }
         persist()
+    }
+
+    fun peekCompletedChapters(book: Audiobook): Set<Int> {
+        if (_state.value.book?.id == book.id) return completedChapters.toSet()
+        val key = KEY_CHAPTER_COMPLETE + book.id.hashCode()
+        val raw = prefs.getString(key, null)
+        if (raw == null) {
+            val seeded = seedCompletedFromPosition(book, book.listenedMs)
+            writeCompleted(book.id, seeded)
+            return seeded
+        }
+        return decodeCompletedRaw(raw)
+    }
+
+    private fun peekCompletedChaptersInternal(bookId: String): Set<Int> {
+        if (_state.value.book?.id == bookId) return completedChapters.toSet()
+        return decodeCompleted(bookId)
+    }
+
+    fun snapshotChapterMarks(bookId: String): ChapterMarksSnapshot {
+        if (_state.value.book?.id == bookId) {
+            return ChapterMarksSnapshot(completedChapters.toSet(), chapterProgress.toMap())
+        }
+        return ChapterMarksSnapshot(decodeCompleted(bookId), decodeChapterProgress(bookId))
+    }
+
+    fun restoreChapterMarks(bookId: String, snapshot: ChapterMarksSnapshot) {
+        writeCompleted(bookId, snapshot.completed)
+        writeChapterProgress(bookId, snapshot.progress)
+        if (_state.value.book?.id == bookId) {
+            completedChapters.clear()
+            completedChapters += snapshot.completed
+            chapterProgress.clear()
+            chapterProgress += snapshot.progress
+            _state.update {
+                it.copy(
+                    completedChapters = completedChapters.toSet(),
+                    chapterPositionsMs = chapterProgress.toMap(),
+                )
+            }
+        }
+    }
+
+    fun setChaptersPlayed(bookId: String, indices: Collection<Int>, played: Boolean) {
+        if (indices.isEmpty()) return
+        val current = peekCompletedChaptersInternal(bookId).toMutableSet()
+        val progress = if (_state.value.book?.id == bookId) {
+            chapterProgress.toMutableMap()
+        } else {
+            decodeChapterProgress(bookId).toMutableMap()
+        }
+        if (played) {
+            current += indices
+            indices.forEach { progress.remove(it) }
+        } else {
+            current -= indices.toSet()
+        }
+        writeCompleted(bookId, current)
+        writeChapterProgress(bookId, progress)
+        if (_state.value.book?.id == bookId) {
+            completedChapters.clear()
+            completedChapters += current
+            chapterProgress.clear()
+            chapterProgress += progress
+            _state.update {
+                it.copy(
+                    completedChapters = completedChapters.toSet(),
+                    chapterPositionsMs = chapterProgress.toMap() +
+                        (_state.value.currentChapterIndex to _state.value.chapterPositionMs),
+                )
+            }
+            persistChapterProgress()
+        }
     }
 
     fun toggleRepeat() {
@@ -291,7 +395,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             is SleepTimer.EndOfChapters -> {
                 sleepUntilMediaIndex = _state.value.currentChapterIndex + timer.chapters
             }
-            SleepTimer.EndOfBook -> Unit
         }
     }
 
@@ -300,14 +403,69 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         sleepJob?.cancel()
         sleepUntilMediaIndex = null
         playWhenReadyAfterConnect = false
+        pausedAtElapsedMs = 0L
         rememberCurrentChapter()
         persistChapterProgress()
+        persistCompleted(_state.value.book?.id)
         controller?.pause()
         controller?.stop()
         controller?.clearMediaItems()
         chapterProgress.clear()
-        _state.value = PlayerUiState()
+        completedChapters.clear()
+        val resumeEnabled = _state.value.smartResumeEnabled
+        val resumeSeconds = _state.value.smartResumeSeconds
+        val skipBack = _state.value.skipBackSeconds
+        val skipForward = _state.value.skipForwardSeconds
+        _state.value = PlayerUiState(
+            smartResumeEnabled = resumeEnabled,
+            smartResumeSeconds = resumeSeconds,
+            skipBackSeconds = skipBack,
+            skipForwardSeconds = skipForward,
+        )
         persist(captureChapter = false)
+    }
+
+    fun setSmartResumeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SMART_RESUME, enabled).apply()
+        _state.update { it.copy(smartResumeEnabled = enabled) }
+    }
+
+    fun setSmartResumeSeconds(seconds: Int) {
+        val snapped = if (seconds in SMART_RESUME_OPTIONS) seconds else 5
+        prefs.edit().putInt(KEY_SMART_RESUME_SECONDS, snapped).apply()
+        _state.update { it.copy(smartResumeSeconds = snapped) }
+    }
+
+    fun setSkipBackSeconds(seconds: Int) {
+        val snapped = snapSkipSeconds(seconds)
+        prefs.edit().putInt(KEY_SKIP_BACK_SECONDS, snapped).apply()
+        _state.update { it.copy(skipBackSeconds = snapped) }
+    }
+
+    fun setSkipForwardSeconds(seconds: Int) {
+        val snapped = snapSkipSeconds(seconds)
+        prefs.edit().putInt(KEY_SKIP_FORWARD_SECONDS, snapped).apply()
+        _state.update { it.copy(skipForwardSeconds = snapped) }
+    }
+
+    private fun applySmartResume() {
+        val pausedAt = pausedAtElapsedMs
+        pausedAtElapsedMs = 0L
+        val current = _state.value
+        if (!current.smartResumeEnabled || current.finished) return
+        if (pausedAt == 0L) return
+        if (SystemClock.elapsedRealtime() - pausedAt < SMART_RESUME_PAUSE_MS) return
+        skip(-(current.smartResumeSeconds * 1_000L))
+    }
+
+    private fun initialState(): PlayerUiState {
+        val seconds = prefs.getInt(KEY_SMART_RESUME_SECONDS, 5)
+        return PlayerUiState(
+            smartResumeEnabled = prefs.getBoolean(KEY_SMART_RESUME, false),
+            smartResumeSeconds = if (seconds in SMART_RESUME_OPTIONS) seconds else 5,
+            skipBackSeconds = snapSkipSeconds(prefs.getInt(KEY_SKIP_BACK_SECONDS, 10)),
+            skipForwardSeconds = snapSkipSeconds(prefs.getInt(KEY_SKIP_FORWARD_SECONDS, 10)),
+        )
     }
 
     private fun pauseForSleep() {
@@ -331,7 +489,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
-            SleepTimer.EndOfBook -> if (ended) pauseForSleep()
             null -> Unit
         }
     }
@@ -368,7 +525,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun loadCurrentBook(playWhenReady: Boolean, resetPosition: Boolean) {
-        val player = controller ?: return
+        val player = controller
+        if (player == null) {
+            if (playWhenReady) playWhenReadyAfterConnect = true
+            return
+        }
         val book = _state.value.book ?: return
         val items = book.toMediaItems()
         if (items.isEmpty()) return
@@ -419,6 +580,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (chapterDuration > 1L) position.coerceAtMost(chapterDuration) else position
         }
         val ended = player.playbackState == Player.STATE_ENDED
+        val previousIndex = _state.value.currentChapterIndex
+        if (index != previousIndex) {
+            maybeCompleteChapter(
+                previousIndex,
+                _state.value.chapterPositionMs,
+                _state.value.chapterDurationMs,
+            )
+        }
+        if (ended) {
+            maybeCompleteChapter(index, chapterDuration, chapterDuration)
+        }
         _state.update {
             it.copy(
                 book = book.copy(
@@ -434,25 +606,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 speed = player.playbackParameters.speed,
                 finished = ended || (bookDuration > 1L && bookPosition >= bookDuration),
                 chapterPositionsMs = chapterProgress.toMap() + (index to (if (ended) chapterDuration else chapterPosition)),
+                completedChapters = completedChapters.toSet(),
             )
         }
         checkSleep(index, ended)
-        maybeAdvanceQueue(book, index, ended)
         if (throttlePersist) {
             val now = System.currentTimeMillis()
             if (now - lastPersistAt >= 5_000L) persist()
         }
-    }
-
-    private fun maybeAdvanceQueue(book: Audiobook, index: Int, ended: Boolean) {
-        if (!ended || _state.value.repeatEnabled) return
-        val last = (controller?.mediaItemCount ?: 1) - 1
-        if (index < last) return
-        if (handledEndId == book.id) return
-        handledEndId = book.id
-        val position = queue.indexOfFirst { it.id == book.id }
-        val next = queue.getOrNull(position + 1) ?: return
-        selectBook(next, play = true)
     }
 
     private fun persist(captureChapter: Boolean = true) {
@@ -526,20 +687,115 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun loadChapterProgress(bookId: String) {
         chapterProgress.clear()
-        val raw = prefs.getString(KEY_CHAPTER_PROGRESS + bookId.hashCode(), null)
-        raw?.split(',')?.forEach { part ->
+        chapterProgress.putAll(decodeChapterProgress(bookId))
+        _state.update { it.copy(chapterPositionsMs = chapterProgress.toMap()) }
+    }
+
+    fun peekChapterProgress(bookId: String): Map<Int, Long> {
+        if (_state.value.book?.id == bookId) return _state.value.chapterPositionsMs
+        return decodeChapterProgress(bookId)
+    }
+
+    private fun decodeChapterProgress(bookId: String): Map<Int, Long> {
+        val raw = prefs.getString(KEY_CHAPTER_PROGRESS + bookId.hashCode(), null) ?: return emptyMap()
+        val parsed = mutableMapOf<Int, Long>()
+        raw.split(',').forEach { part ->
             val pieces = part.split(':')
             if (pieces.size != 2) return@forEach
             val index = pieces[0].toIntOrNull() ?: return@forEach
             val position = pieces[1].toLongOrNull() ?: return@forEach
-            if (position > 0L) chapterProgress[index] = position
+            if (position > 0L) parsed[index] = position
         }
-        _state.update { it.copy(chapterPositionsMs = chapterProgress.toMap()) }
+        return parsed
     }
 
     private fun persistChapterProgress() {
         val bookId = _state.value.book?.id ?: return
-        val encoded = chapterProgress.entries
+        writeChapterProgress(bookId, chapterProgress)
+    }
+
+    private fun markChaptersComplete(indices: Set<Int>) {
+        val bookId = _state.value.book?.id ?: return
+        completedChapters += indices
+        indices.forEach { chapterProgress.remove(it) }
+        persistCompleted(bookId)
+        persistChapterProgress()
+        _state.update {
+            it.copy(
+                completedChapters = completedChapters.toSet(),
+                chapterMarksEpoch = it.chapterMarksEpoch + 1,
+            )
+        }
+    }
+
+    private fun maybeCompleteChapter(index: Int, positionMs: Long, durationMs: Long) {
+        if (index < 0 || durationMs <= 0L) return
+        if (positionMs.toFloat() / durationMs < 0.98f) return
+        if (completedChapters.add(index)) {
+            persistCompleted(_state.value.book?.id)
+            _state.update {
+                it.copy(
+                    completedChapters = completedChapters.toSet(),
+                    chapterMarksEpoch = it.chapterMarksEpoch + 1,
+                )
+            }
+        }
+    }
+
+    private fun loadCompletedChapters(book: Audiobook, bookPositionMs: Long) {
+        completedChapters.clear()
+        val key = KEY_CHAPTER_COMPLETE + book.id.hashCode()
+        val raw = prefs.getString(key, null)
+        if (raw == null) {
+            completedChapters += seedCompletedFromPosition(book, bookPositionMs)
+            persistCompleted(book.id)
+        } else {
+            completedChapters += decodeCompletedRaw(raw)
+        }
+        _state.update {
+            it.copy(
+                completedChapters = completedChapters.toSet(),
+                chapterMarksEpoch = it.chapterMarksEpoch + 1,
+            )
+        }
+    }
+
+    private fun seedCompletedFromPosition(book: Audiobook, bookPositionMs: Long): Set<Int> {
+        val durations = book.chapterDurationsMs
+        if (durations.isEmpty()) return emptySet()
+        val starts = book.chapterStartMs
+        val done = mutableSetOf<Int>()
+        durations.forEachIndexed { index, duration ->
+            val start = starts.getOrNull(index) ?: durations.take(index).sum()
+            val end = start + duration
+            if (bookPositionMs >= end - 2_000L) done += index
+        }
+        return done
+    }
+
+    private fun decodeCompleted(bookId: String): Set<Int> {
+        val raw = prefs.getString(KEY_CHAPTER_COMPLETE + bookId.hashCode(), null) ?: return emptySet()
+        return decodeCompletedRaw(raw)
+    }
+
+    private fun decodeCompletedRaw(raw: String): Set<Int> {
+        if (raw.isBlank()) return emptySet()
+        return raw.split(',').mapNotNull { it.toIntOrNull() }.toSet()
+    }
+
+    private fun writeCompleted(bookId: String, completed: Set<Int>) {
+        val key = KEY_CHAPTER_COMPLETE + bookId.hashCode()
+        prefs.edit().putString(key, completed.sorted().joinToString(",")).apply()
+        _state.update { it.copy(chapterMarksEpoch = it.chapterMarksEpoch + 1) }
+    }
+
+    private fun persistCompleted(bookId: String?) {
+        if (bookId == null) return
+        writeCompleted(bookId, completedChapters)
+    }
+
+    private fun writeChapterProgress(bookId: String, progress: Map<Int, Long>) {
+        val encoded = progress.entries
             .filter { it.value > 0L }
             .joinToString(",") { "${it.key}:${it.value}" }
         val key = KEY_CHAPTER_PROGRESS + bookId.hashCode()
@@ -554,7 +810,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         const val KEY_SPEED = "last_speed"
         const val KEY_REPEAT = "last_repeat"
         const val KEY_CHAPTER_PROGRESS = "chapter_progress_"
+        const val KEY_CHAPTER_COMPLETE = "chapter_complete_"
+        const val KEY_SMART_RESUME = "smart_resume"
+        const val KEY_SMART_RESUME_SECONDS = "smart_resume_seconds"
+        const val KEY_SKIP_BACK_SECONDS = "skip_back_seconds"
+        const val KEY_SKIP_FORWARD_SECONDS = "skip_forward_seconds"
+        const val SMART_RESUME_PAUSE_MS = 30_000L
+        val SMART_RESUME_OPTIONS = setOf(3, 5, 10)
+        val SKIP_OPTIONS = listOf(5, 10, 15, 20, 30, 60)
+
+        fun snapSkipSeconds(seconds: Int): Int {
+            return SKIP_OPTIONS.minBy { kotlin.math.abs(it - seconds) }
+        }
     }
+}
+
+private fun Audiobook.chapterCountForMarks(): Int {
+    return chapterTitles.size.takeIf { it > 0 }
+        ?: chapterDurationsMs.size.takeIf { it > 0 }
+        ?: 1
 }
 
 private fun Audiobook.withChapter(previous: Audiobook?): Audiobook {

@@ -15,12 +15,15 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import com.booky.app.data.Audiobook
 import com.booky.app.settings.AppearanceMode
+import com.booky.app.settings.ColorTheme
+import com.booky.app.settings.PlaceholderCoverStyle
 
 val BookyCoverOuter = Color(0xFF2A1018)
 val BookyCoverInner = Color(0xFF8B3A48)
@@ -30,7 +33,9 @@ val BookyCoverText = Color(0xFFE8C9C4)
 @Composable
 fun BookyTheme(
     appearance: AppearanceMode = AppearanceMode.System,
+    colorTheme: ColorTheme = ColorTheme.Book,
     book: Audiobook? = null,
+    placeholderCover: PlaceholderCoverStyle = PlaceholderCoverStyle.Default,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -48,6 +53,11 @@ fun BookyTheme(
         darkTheme -> darkColorScheme()
         else -> expressiveLightColorScheme()
     }
+    val targetScheme = when (colorTheme) {
+        ColorTheme.System -> systemScheme
+        ColorTheme.Book -> rememberArtworkColorScheme(book, systemScheme, darkTheme)
+    }
+    val colorScheme = animateColorSchemeAsState(targetScheme)
     SideEffect {
         val activity = view.context as? Activity ?: return@SideEffect
         (activity as? ComponentActivity)?.enableEdgeToEdge(
@@ -62,10 +72,12 @@ fun BookyTheme(
             ) { _ -> darkTheme },
         )
     }
-    MaterialExpressiveTheme(
-        colorScheme = rememberArtworkColorScheme(book, systemScheme, darkTheme),
-        motionScheme = MotionScheme.expressive(),
-        typography = bookyTypography(),
-        content = content,
-    )
+    CompositionLocalProvider(LocalPlaceholderCoverStyle provides placeholderCover) {
+        MaterialExpressiveTheme(
+            colorScheme = colorScheme,
+            motionScheme = MotionScheme.expressive(),
+            typography = bookyTypography(),
+            content = content,
+        )
+    }
 }

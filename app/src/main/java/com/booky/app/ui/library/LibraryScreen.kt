@@ -13,12 +13,12 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +38,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +52,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -64,6 +65,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -80,6 +83,7 @@ import com.booky.app.ui.components.SwipeToRevealActions
 fun LibraryScreen(
     books: List<Audiobook>,
     onOpenBook: (Audiobook) -> Unit,
+    onPlayBook: (Audiobook) -> Unit,
     modifier: Modifier = Modifier,
     activeBookId: String? = null,
     isPlaying: Boolean = false,
@@ -87,7 +91,7 @@ fun LibraryScreen(
     hasFolder: Boolean = false,
     folderName: String? = null,
     scanning: Boolean = false,
-    sort: LibrarySort = LibrarySort.Manual,
+    sort: LibrarySort = LibrarySort.Alphabetical,
     onSortChange: (LibrarySort) -> Unit = {},
     onMarkPlayed: (List<Audiobook>) -> Unit = {},
     onDelete: (List<Audiobook>) -> Unit = {},
@@ -207,6 +211,7 @@ fun LibraryScreen(
                                 DropdownMenu(
                                     expanded = sortMenu,
                                     onDismissRequest = { sortMenu = false },
+                                    shape = MenuDefaults.shape,
                                 ) {
                                     LibrarySort.entries.forEachIndexed { index, option ->
                                         DropdownMenuItem(
@@ -326,6 +331,7 @@ fun LibraryScreen(
                             revealedId = if (open) book.id else if (revealedId == book.id) null else revealedId
                         },
                         onOpen = { onOpenBook(book) },
+                        onPlay = { onPlayBook(book) },
                         onToggleSelect = {
                             selectedIds = if (book.id in selectedIds) {
                                 selectedIds - book.id
@@ -400,6 +406,7 @@ private fun LibraryBookRow(
     revealed: Boolean,
     onRevealedChange: (Boolean) -> Unit,
     onOpen: () -> Unit,
+    onPlay: () -> Unit,
     onToggleSelect: () -> Unit,
     onEnterSelect: () -> Unit,
     onEdit: () -> Unit,
@@ -465,6 +472,8 @@ private fun LibraryBookRow(
             selected = selected,
             onClick = if (selecting) onToggleSelect else onOpen,
             onLongClick = if (selecting) onToggleSelect else onEnterSelect,
+            onPlay = onPlay,
+            playing = showWavyProgress,
         )
     }
 }
@@ -480,6 +489,8 @@ private fun LibraryRow(
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPlay: () -> Unit,
+    playing: Boolean,
 ) {
     val stored = if (book.durationMs == 0L) 0f else (book.listenedMs.toFloat() / book.durationMs).coerceIn(0f, 1f)
     val progress = (progressOverride ?: stored).coerceIn(0f, 1f)
@@ -496,58 +507,93 @@ private fun LibraryRow(
         animationSpec = motion.defaultEffectsSpec(),
         label = "library-row-container",
     )
-    val colors = ListItemDefaults.colors(containerColor = container)
-    val leading = @Composable {
-        BookCover(book, Modifier.size(72.dp), corner = 8.dp)
-    }
-    val supporting = @Composable {
-        Column {
-            Text(
-                "${book.author} · ${book.narrator}",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                remainingLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
-            if (showWavyProgress) {
-                LinearWavyProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+    val showProgress = progress > 0f
+    Surface(
+        shape = itemShapes.shape,
+        color = container,
+        contentColor = if (selected) scheme.onSecondaryContainer else scheme.onSurface,
+        modifier = Modifier.clip(itemShapes.shape),
+    ) {
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                        onLongClickLabel = "Select",
+                    )
+                    .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                BookCover(book, Modifier.size(72.dp), corner = 8.dp)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 16.dp, end = 12.dp),
+                ) {
+                    Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${book.author} · ${book.narrator}",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        remainingLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Box(
+                    modifier = Modifier.height(72.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (selecting) {
+                        Checkbox(checked = selected, onCheckedChange = null)
+                    } else {
+                        FilledIconButton(
+                            onClick = onPlay,
+                            shapes = IconButtonDefaults.shapes(
+                                shape = IconButtonDefaults.smallRoundShape,
+                                pressedShape = IconButtonDefaults.smallPressedShape,
+                            ),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = scheme.primary,
+                                contentColor = scheme.onPrimary,
+                            ),
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                if (playing) BookyIcons.pause else BookyIcons.play,
+                                contentDescription = if (playing) "Pause" else "Play",
+                            )
+                        }
+                    }
+                }
+            }
+            if (showProgress) {
+                val barModifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(4.dp)
+                if (showWavyProgress) {
+                    LinearWavyProgressIndicator(
+                        progress = { progress },
+                        modifier = barModifier,
+                        gapSize = 0.dp,
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = barModifier,
+                        strokeCap = StrokeCap.Round,
+                        gapSize = 0.dp,
+                        drawStopIndicator = {},
+                    )
+                }
             }
         }
-    }
-    SegmentedListItem(
-        onClick = onClick,
-        onLongClick = onLongClick,
-        onLongClickLabel = "Select",
-        shapes = itemShapes,
-        colors = colors,
-        leadingContent = leading,
-        trailingContent = {
-            AnimatedVisibility(
-                visible = selecting,
-                enter = fadeIn(motion.defaultEffectsSpec()) +
-                    scaleIn(motion.fastSpatialSpec(), initialScale = 0.86f),
-                exit = fadeOut(motion.fastEffectsSpec()) +
-                    scaleOut(motion.fastSpatialSpec(), targetScale = 0.86f),
-            ) {
-                Checkbox(checked = selected, onCheckedChange = null)
-            }
-        },
-        supportingContent = supporting,
-    ) {
-        Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

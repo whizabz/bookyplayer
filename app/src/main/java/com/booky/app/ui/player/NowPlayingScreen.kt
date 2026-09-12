@@ -1,6 +1,8 @@
 package com.booky.app.ui.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -10,6 +12,9 @@ import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.snapTo
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,11 +38,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,18 +60,21 @@ import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -79,11 +87,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp as lerpOffset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -92,19 +106,27 @@ import androidx.compose.ui.text.lerp as lerpTextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.round
 import com.booky.app.data.formatClock
 import com.booky.app.data.formatMinutes
+import com.booky.app.player.ChapterMarksSnapshot
 import com.booky.app.player.PlayerUiState
 import com.booky.app.player.SleepTimer
 import com.booky.app.ui.components.BookCover
 import com.booky.app.ui.components.BookyIcons
+import com.booky.app.ui.components.MarkPreviousChaptersDialog
+import com.booky.app.ui.components.SwipeableChapterRow
+import com.booky.app.ui.components.chapterListenProgress
+import com.booky.app.ui.components.showBulkChapterSnackbar
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-private enum class PlayerAnchor { Expanded, Mini }
+private enum class PlayerAnchor { Expanded, Mini, Hidden }
 
 private val MiniPlayerHeight = 64.dp
 private val MiniPlayerInset = 12.dp
@@ -125,8 +147,11 @@ fun NowPlayingScreen(
     onSetSpeed: (Float) -> Unit,
     onSetSleepTimer: (SleepTimer?) -> Unit,
     onRestartChapter: () -> Unit,
-    onMarkChapterPlayed: () -> Unit,
+    onMarkChapterPlayed: (Boolean) -> Unit,
     onMarkBookPlayed: () -> Unit,
+    onSetChaptersPlayed: (Collection<Int>, Boolean) -> Unit,
+    onSnapshotMarks: () -> ChapterMarksSnapshot,
+    onRestoreMarks: (ChapterMarksSnapshot) -> Unit,
     onToggleRepeat: () -> Unit,
     onCloseBook: () -> Unit,
     modifier: Modifier = Modifier,
@@ -135,30 +160,43 @@ fun NowPlayingScreen(
     val colors = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val spatialSpec = motion.slowSpatialSpec<Float>()
-    val toolbarColors = FloatingToolbarDefaults.standardFloatingToolbarColors()
+    val miniContainer =
+        if (colors.background.luminance() < 0.5f) {
+            colors.surfaceContainerLowest
+        } else {
+            colors.surfaceContainerHighest
+        }
     val scope = rememberCoroutineScope()
+    val dismissX = remember { Animatable(0f) }
     val dragState = remember {
         AnchoredDraggableState(
-            initialValue = if (expanded) PlayerAnchor.Expanded else PlayerAnchor.Mini,
+            initialValue = if (expanded) PlayerAnchor.Expanded else PlayerAnchor.Hidden,
             DraggableAnchors {
                 PlayerAnchor.Expanded at 0f
-                PlayerAnchor.Mini at 1f
+                PlayerAnchor.Mini at 10_000f
+                PlayerAnchor.Hidden at 20_000f
             },
         )
+    }
+    var hasEntered by remember { mutableStateOf(expanded) }
+    LaunchedEffect(player.book?.id) {
+        dismissX.snapTo(0f)
     }
     val settleTo: (PlayerAnchor) -> Unit = { target ->
         scope.launch { dragState.animateTo(target, spatialSpec) }
     }
     LaunchedEffect(expanded) {
+        if (!hasEntered) return@LaunchedEffect
         val target = if (expanded) PlayerAnchor.Expanded else PlayerAnchor.Mini
         if (dragState.currentValue != target) {
             dragState.animateTo(target, spatialSpec)
         }
     }
     LaunchedEffect(dragState.settledValue) {
-        val settledExpanded = dragState.settledValue == PlayerAnchor.Expanded
-        if (settledExpanded != expanded) {
-            onExpandedChange(settledExpanded)
+        when (dragState.settledValue) {
+            PlayerAnchor.Hidden -> Unit
+            PlayerAnchor.Expanded -> if (!expanded) onExpandedChange(true)
+            PlayerAnchor.Mini -> if (expanded) onExpandedChange(false)
         }
     }
     BackHandler(enabled = expanded) {
@@ -173,7 +211,23 @@ fun NowPlayingScreen(
         val fullWidthPx = constraints.maxWidth.toFloat()
         val fullHeightPx = constraints.maxHeight.toFloat()
         val rangePx = (fullHeightPx - miniHeightPx - navPx - screenOffsetPx).coerceAtLeast(1f)
-        LaunchedEffect(rangePx) {
+        val hiddenPx = rangePx + miniHeightPx + navPx + screenOffsetPx
+        LaunchedEffect(rangePx, hiddenPx) {
+            if (!hasEntered && !expanded) {
+                dragState.updateAnchors(
+                    DraggableAnchors {
+                        PlayerAnchor.Expanded at 0f
+                        PlayerAnchor.Mini at rangePx
+                        PlayerAnchor.Hidden at hiddenPx
+                    },
+                )
+                dragState.snapTo(PlayerAnchor.Hidden)
+                dragState.animateTo(PlayerAnchor.Mini, spatialSpec)
+                hasEntered = true
+            } else if (!hasEntered) {
+                dragState.snapTo(PlayerAnchor.Expanded)
+                hasEntered = true
+            }
             dragState.updateAnchors(
                 DraggableAnchors {
                     PlayerAnchor.Expanded at 0f
@@ -182,10 +236,22 @@ fun NowPlayingScreen(
             )
         }
         val offsetPx = runCatching { dragState.requireOffset() }.getOrDefault(
-            if (expanded) 0f else rangePx,
+            when {
+                expanded -> 0f
+                hasEntered -> rangePx
+                else -> hiddenPx
+            },
         )
         val rawProgress = offsetPx / rangePx
         val collapseProgress = rawProgress.coerceIn(0f, 1f)
+        val miniSettled = collapseProgress > 0.92f &&
+            dragState.settledValue == PlayerAnchor.Mini &&
+            !dragState.isAnimationRunning
+        val dismissThresholdPx = with(density) { 80.dp.toPx() }
+        val dismissOffscreenPx = fullWidthPx + with(density) { 48.dp.toPx() }
+        val dismissDrag = rememberDraggableState { delta ->
+            scope.launch { dismissX.snapTo(dismissX.value + delta) }
+        }
         val chromeFade = effectsOutgoing(rawProgress)
         val miniFade = effectsIncoming(rawProgress)
         val scrimFade = effectsScrim(rawProgress)
@@ -236,8 +302,41 @@ fun NowPlayingScreen(
                     end = edgePadding,
                     bottom = bottomPadding,
                 )
+                .offset {
+                    IntOffset(
+                        dismissX.value.roundToInt(),
+                        (offsetPx - rangePx).coerceAtLeast(0f).roundToInt(),
+                    )
+                }
                 .width(surfaceWidth)
                 .height(surfaceHeight)
+                .dropShadow(RoundedCornerShape(corner)) {
+                    radius = 28.dp.toPx()
+                    color = Color.Black
+                    alpha = 0.16f * collapseProgress
+                    offset = Offset(0f, 6.dp.toPx())
+                }
+                .draggable(
+                    state = dismissDrag,
+                    orientation = Orientation.Horizontal,
+                    enabled = miniSettled,
+                    onDragStopped = { velocity ->
+                        scope.launch {
+                            val x = dismissX.value
+                            val shouldClose = abs(x) > dismissThresholdPx || abs(velocity) > 1400f
+                            if (shouldClose) {
+                                val dir = when {
+                                    abs(velocity) > 400f -> if (velocity >= 0f) 1f else -1f
+                                    else -> if (x >= 0f) 1f else -1f
+                                }
+                                dismissX.animateTo(dir * dismissOffscreenPx, spatialSpec)
+                                onCloseBook()
+                            } else {
+                                dismissX.animateTo(0f, spatialSpec)
+                            }
+                        }
+                    },
+                )
                 .anchoredDraggable(
                     state = dragState,
                     orientation = Orientation.Vertical,
@@ -246,15 +345,11 @@ fun NowPlayingScreen(
             shape = RoundedCornerShape(corner),
             color = lerpColor(
                 colors.surface,
-                toolbarColors.toolbarContainerColor,
+                miniContainer,
                 colorProgress,
             ),
-            contentColor = lerpColor(
-                colors.onSurface,
-                toolbarColors.toolbarContentColor,
-                colorProgress,
-            ),
-            shadowElevation = lerp(0.dp, 3.dp, colorProgress),
+            contentColor = colors.onSurface,
+            shadowElevation = 0.dp,
             tonalElevation = 0.dp,
         ) {
             NowPlayingContent(
@@ -285,6 +380,9 @@ fun NowPlayingScreen(
                 onRestartChapter = onRestartChapter,
                 onMarkChapterPlayed = onMarkChapterPlayed,
                 onMarkBookPlayed = onMarkBookPlayed,
+                onSetChaptersPlayed = onSetChaptersPlayed,
+                onSnapshotMarks = onSnapshotMarks,
+                onRestoreMarks = onRestoreMarks,
                 onToggleRepeat = onToggleRepeat,
                 onCloseBook = onCloseBook,
                 modifier = Modifier.fillMaxSize(),
@@ -317,8 +415,11 @@ private fun NowPlayingContent(
     onSetSpeed: (Float) -> Unit,
     onSetSleepTimer: (SleepTimer?) -> Unit,
     onRestartChapter: () -> Unit,
-    onMarkChapterPlayed: () -> Unit,
+    onMarkChapterPlayed: (Boolean) -> Unit,
     onMarkBookPlayed: () -> Unit,
+    onSetChaptersPlayed: (Collection<Int>, Boolean) -> Unit,
+    onSnapshotMarks: () -> ChapterMarksSnapshot,
+    onRestoreMarks: (ChapterMarksSnapshot) -> Unit,
     onToggleRepeat: () -> Unit,
     onCloseBook: () -> Unit,
     modifier: Modifier = Modifier,
@@ -328,15 +429,22 @@ private fun NowPlayingContent(
     val typography = MaterialTheme.typography
     val density = LocalDensity.current
     val speedLabel = formatSpeed(player.speed)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     var showChapters by remember { mutableStateOf(false) }
+    var pendingToolbarMark by remember { mutableStateOf(false) }
+    var pendingMarkChapterConfirm by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showRemaining by rememberSaveable { mutableStateOf(false) }
     var parentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var playSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var skipSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var sliderSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var playExpandedLocked by remember { mutableStateOf<Offset?>(null) }
     var skipExpandedLocked by remember { mutableStateOf<Offset?>(null) }
+    var sliderExpandedLocked by remember { mutableStateOf<Offset?>(null) }
+    var sliderExpandedSizeLocked by remember { mutableStateOf<IntSize?>(null) }
     val chapterDuration = player.chapterDurationMs.toFloat().coerceAtLeast(1f)
     val chapterPosition = player.chapterPositionMs.toFloat().coerceIn(0f, chapterDuration)
     val fadeOut = chromeFade
@@ -366,10 +474,14 @@ private fun NowPlayingContent(
     )
     val measuredPlay = slotOffset(parentCoords, playSlot)
     val measuredSkip = slotOffset(parentCoords, skipSlot)
+    val measuredSlider = slotOffset(parentCoords, sliderSlot)
+    val measuredSliderSize = sliderSlot?.takeIf { it.isAttached }?.size
     SideEffect {
         if (transportSettled) {
             measuredPlay?.let { playExpandedLocked = it }
             measuredSkip?.let { skipExpandedLocked = it }
+            measuredSlider?.let { sliderExpandedLocked = it }
+            measuredSliderSize?.let { sliderExpandedSizeLocked = it }
         }
     }
     val playExpandedOffset = playExpandedLocked
@@ -433,6 +545,39 @@ private fun NowPlayingContent(
         collapseProgress,
     )
     val coverCorner = lerp(16.dp, MiniCoverSize / 2f, collapseProgress)
+    val sliderExpandedSize = sliderExpandedSizeLocked
+        ?: measuredSliderSize.takeIf { transportSettled }
+        ?: IntSize(
+            (fullWidthPx - padExpPx * 2f).roundToInt(),
+            with(density) { 48.dp.roundToPx() },
+        )
+    val sliderExpandedOffset = sliderExpandedLocked
+        ?: measuredSlider.takeIf { transportSettled }
+        ?: Offset(
+            padExpPx,
+            titleExpandedOffset.y + with(density) { (56.dp + 12.dp + 48.dp + 8.dp).toPx() },
+        )
+    val showTransportOverlay = !transportSettled
+    val sliderMiniOffset = Offset(0f, 0f)
+    val sliderMiniSize = IntSize(
+        miniWidthPx.roundToInt(),
+        miniHeightPx.roundToInt(),
+    )
+    val expandedTrackHeightPx = with(density) { 16.dp.toPx() }
+    val sliderExpandedTrackOffset = Offset(
+        sliderExpandedOffset.x,
+        sliderExpandedOffset.y +
+            ((sliderExpandedSize.height - expandedTrackHeightPx) / 2f).coerceAtLeast(0f),
+    )
+    val sliderOffset = lerpOffset(sliderExpandedTrackOffset, sliderMiniOffset, collapseProgress)
+    val sliderWidth = lerp(
+        with(density) { sliderExpandedSize.width.toDp() },
+        with(density) { sliderMiniSize.width.toDp() },
+        collapseProgress,
+    )
+    val sliderHeight = lerp(16.dp, MiniPlayerHeight, collapseProgress)
+    val sliderThumbAlpha = (1f - chromeFade).coerceIn(0f, 1f)
+    val sliderSeekEnabled = collapseProgress < 0.5f
 
     Box(
         modifier
@@ -519,16 +664,11 @@ private fun NowPlayingContent(
             }
 
             Spacer(Modifier.height(8.dp))
-            Slider(
-                value = chapterPosition,
-                onValueChange = { onSeek(it.toLong()) },
-                valueRange = 0f..chapterDuration,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = colors.primary,
-                    activeTrackColor = colors.primary,
-                    inactiveTrackColor = colors.surfaceContainerHighest,
-                ),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .onGloballyPositioned { sliderSlot = it },
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -557,8 +697,8 @@ private fun NowPlayingContent(
 
             Spacer(
                 Modifier
-                    .weight(1f)
-                    .heightIn(min = 20.dp),
+                    .weight(0.65f)
+                    .heightIn(min = 12.dp),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -572,15 +712,16 @@ private fun NowPlayingContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     transportItem(
-                        menuLabel = "Back 10 seconds",
-                        onClick = { onSkip(-10_000) },
+                        menuLabel = "Back ${player.skipBackSeconds} seconds",
+                        onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
+                        enabled = !showTransportOverlay,
                         modifier = Modifier
                             .onGloballyPositioned { skipSlot = it }
-                            .graphicsLayer { alpha = 0f },
+                            .graphicsLayer { alpha = if (showTransportOverlay) 0f else 1f },
                         icon = {
                             Icon(
                                 BookyIcons.skipBack,
-                                contentDescription = "Back 10 seconds",
+                                contentDescription = "Back ${player.skipBackSeconds} seconds",
                                 modifier = Modifier.size(IconButtonDefaults.largeIconSize),
                             )
                         },
@@ -590,8 +731,8 @@ private fun NowPlayingContent(
                             val interactionSource = remember { MutableInteractionSource() }
                             FilledIconToggleButton(
                                 checked = player.isPlaying,
-                                onCheckedChange = { },
-                                enabled = false,
+                                onCheckedChange = { onTogglePlay() },
+                                enabled = !showTransportOverlay,
                                 shapes = IconButtonDefaults.toggleableShapes(
                                     shape = IconButtonDefaults.extraLargeSquareShape,
                                     pressedShape = IconButtonDefaults.extraLargePressedShape,
@@ -604,10 +745,10 @@ private fun NowPlayingContent(
                                     checkedContentColor = colors.onPrimary,
                                 ),
                                 modifier = Modifier
-                                    .animateWidth(interactionSource)
                                     .size(IconButtonDefaults.extraLargeContainerSize())
                                     .onGloballyPositioned { playSlot = it }
-                                    .graphicsLayer { alpha = 0f },
+                                    .animateWidth(interactionSource)
+                                    .graphicsLayer { alpha = if (showTransportOverlay) 0f else 1f },
                                 interactionSource = interactionSource,
                             ) {
                                 Icon(
@@ -642,12 +783,12 @@ private fun NowPlayingContent(
                         },
                     )
                     transportItem(
-                        menuLabel = "Forward 10 seconds",
-                        onClick = { onSkip(10_000) },
+                        menuLabel = "Forward ${player.skipForwardSeconds} seconds",
+                        onClick = { onSkip(player.skipForwardSeconds * 1_000L) },
                         icon = {
                             Icon(
                                 BookyIcons.skipForward,
-                                contentDescription = "Forward 10 seconds",
+                                contentDescription = "Forward ${player.skipForwardSeconds} seconds",
                                 modifier = Modifier.size(IconButtonDefaults.largeIconSize),
                             )
                         },
@@ -657,8 +798,8 @@ private fun NowPlayingContent(
 
             Spacer(
                 Modifier
-                    .weight(1f)
-                    .heightIn(min = 20.dp),
+                    .weight(1.35f)
+                    .heightIn(min = 24.dp),
             )
             ButtonGroup(
                 overflowIndicator = { menuState ->
@@ -696,30 +837,31 @@ private fun NowPlayingContent(
                     icon = { Icon(BookyIcons.chapters, contentDescription = null) },
                 )
                 toolbarItem(
+                    menuLabel = "Repeat",
+                    active = player.repeatEnabled,
+                    onClick = onToggleRepeat,
+                    icon = { Icon(BookyIcons.repeat, contentDescription = null) },
+                )
+                toolbarItem(
+                    menuLabel = "Mark chapter as played",
+                    onClick = { pendingMarkChapterConfirm = true },
+                    icon = { Icon(BookyIcons.check, contentDescription = null) },
+                )
+                toolbarItem(
                     menuLabel = "Cast",
                     onClick = {},
                     icon = { Icon(BookyIcons.cast, contentDescription = "Cast") },
                 )
                 toolbarItem(
                     menuLabel = "Restart chapter",
+                    overflowOnly = true,
                     onClick = onRestartChapter,
                     icon = { Icon(BookyIcons.restartAlt, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Mark chapter as played",
-                    onClick = onMarkChapterPlayed,
-                    icon = { Icon(BookyIcons.check, contentDescription = null) },
                 )
                 toolbarItem(
                     menuLabel = "Mark book as played",
                     onClick = onMarkBookPlayed,
                     icon = { Icon(BookyIcons.doneAll, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Repeat",
-                    active = player.repeatEnabled,
-                    onClick = onToggleRepeat,
-                    icon = { Icon(BookyIcons.autoSkipping, contentDescription = null) },
                 )
                 toolbarItem(
                     menuLabel = "Close book",
@@ -730,6 +872,25 @@ private fun NowPlayingContent(
             Spacer(Modifier.height(12.dp))
         }
 
+        MorphingChapterSlider(
+            value = chapterPosition,
+            valueRange = 0f..chapterDuration,
+            onValueChange = { onSeek(it.toLong()) },
+            enabled = sliderSeekEnabled,
+            collapseProgress = collapseProgress,
+            thumbAlpha = sliderThumbAlpha,
+            modifier = Modifier
+                .offset { sliderOffset.round() }
+                .width(sliderWidth)
+                .height(sliderHeight)
+                .then(
+                    if (collapseProgress > 0.55f) {
+                        Modifier.clickable(onClick = onExpand)
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
         BookCover(
             book = book,
             modifier = Modifier
@@ -789,36 +950,22 @@ private fun NowPlayingContent(
                     modifier = Modifier.graphicsLayer { alpha = miniFade },
                 )
             }
-            LinearProgressIndicator(
-                progress = { (chapterPosition / chapterDuration).coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .padding(top = 6.dp)
-                    .widthIn(min = 72.dp)
-                    .height(4.dp)
-                    .graphicsLayer { alpha = miniFade },
-                strokeCap = StrokeCap.Round,
-                gapSize = 0.dp,
-                drawStopIndicator = {},
-            )
         }
+        if (showTransportOverlay) {
             FilledTonalIconButton(
-                onClick = { onSkip(-10_000) },
+                onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
                 shapes = IconButtonDefaults.shapes(
                     shape = IconButtonDefaults.largeRoundShape,
                     pressedShape = IconButtonDefaults.largePressedShape,
                 ),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = colors.secondaryContainer.copy(
-                        alpha = (1f - chromeFade).coerceIn(0f, 1f),
-                    ),
-                ),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(),
                 modifier = Modifier
                     .offset { skipOffset.round() }
                     .size(skipSize),
             ) {
                 Icon(
                     BookyIcons.skipBack,
-                    contentDescription = "Back 10 seconds",
+                    contentDescription = "Back ${player.skipBackSeconds} seconds",
                     modifier = Modifier.size(
                         lerp(
                             IconButtonDefaults.largeIconSize,
@@ -828,23 +975,23 @@ private fun NowPlayingContent(
                     ),
                 )
             }
-            FilledIconButton(
-                onClick = onTogglePlay,
-                shapes = IconButtonDefaults.shapes(
-                    shape = RoundedCornerShape(
-                        lerp(
-                            16.dp,
-                            20.dp,
-                            collapseProgress,
-                        ).coerceAtLeast(0.dp),
-                    ),
-                    pressedShape = RoundedCornerShape(
-                        lerp(12.dp, 16.dp, collapseProgress).coerceAtLeast(0.dp),
-                    ),
+            FilledIconToggleButton(
+                checked = player.isPlaying,
+                onCheckedChange = { onTogglePlay() },
+                shapes = IconButtonDefaults.toggleableShapes(
+                    shape = if (collapseProgress > 0.55f) {
+                        RoundedCornerShape(20.dp)
+                    } else {
+                        IconButtonDefaults.extraLargeSquareShape
+                    },
+                    pressedShape = IconButtonDefaults.extraLargePressedShape,
+                    checkedShape = IconButtonDefaults.extraLargeRoundShape,
                 ),
-                colors = IconButtonDefaults.filledIconButtonColors(
+                colors = IconButtonDefaults.filledIconToggleButtonColors(
                     containerColor = colors.primary,
                     contentColor = colors.onPrimary,
+                    checkedContainerColor = colors.primary,
+                    checkedContentColor = colors.onPrimary,
                 ),
                 modifier = Modifier
                     .offset { playOffset.round() }
@@ -862,7 +1009,70 @@ private fun NowPlayingContent(
                     ),
                 )
             }
+        }
 
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 96.dp),
+        )
+        if (pendingMarkChapterConfirm) {
+            AlertDialog(
+                onDismissRequest = { pendingMarkChapterConfirm = false },
+                title = { Text("Mark chapter as played?") },
+                text = {
+                    Text(
+                        "Mark \"${book.currentChapterTitle}\" as played and skip to the next chapter.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            pendingMarkChapterConfirm = false
+                            val index = player.currentChapterIndex
+                            val previousIncomplete =
+                                (0 until index).any { it !in player.completedChapters }
+                            if (index > 0 && previousIncomplete) {
+                                pendingToolbarMark = true
+                            } else {
+                                onMarkChapterPlayed(false)
+                            }
+                        },
+                    ) { Text("Mark as played") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingMarkChapterConfirm = false }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+        if (pendingToolbarMark) {
+            val index = player.currentChapterIndex
+            val previousCount = (0 until index).count { it !in player.completedChapters }
+            MarkPreviousChaptersDialog(
+                previousCount = previousCount,
+                onMarkPrevious = {
+                    pendingToolbarMark = false
+                    val snapshot = onSnapshotMarks()
+                    onMarkChapterPlayed(true)
+                    snackbarScope.showBulkChapterSnackbar(
+                        host = snackbarHostState,
+                        count = previousCount + 1,
+                        played = true,
+                        snapshot = snapshot,
+                        restore = onRestoreMarks,
+                    )
+                },
+                onOnlyThese = {
+                    pendingToolbarMark = false
+                    onMarkChapterPlayed(false)
+                },
+                onDismiss = { pendingToolbarMark = false },
+            )
+        }
         if (showSleep) {
             SleepSheet(
                 timer = player.sleepTimer,
@@ -883,9 +1093,15 @@ private fun NowPlayingContent(
             ChapterListSheet(
                 titles = book.chapterTitles.ifEmpty { listOf(book.currentChapterTitle) },
                 durationsMs = book.chapterDurationsMs,
+                chapterStartMs = book.chapterStartMs,
+                bookPositionMs = player.bookPositionMs,
                 currentIndex = player.currentChapterIndex,
                 positionsMs = player.chapterPositionsMs,
+                completedChapters = player.completedChapters,
                 onSelect = onSeekChapter,
+                onSetChaptersPlayed = onSetChaptersPlayed,
+                onSnapshotMarks = onSnapshotMarks,
+                onRestoreMarks = onRestoreMarks,
                 onDismiss = { showChapters = false },
             )
         }
@@ -897,6 +1113,7 @@ private fun ButtonGroupScope.transportItem(
     menuLabel: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     icon: @Composable () -> Unit,
 ) {
     customItem(
@@ -904,13 +1121,14 @@ private fun ButtonGroupScope.transportItem(
             val interactionSource = remember { MutableInteractionSource() }
             FilledTonalIconButton(
                 onClick = onClick,
+                enabled = enabled,
                 shapes = IconButtonDefaults.shapes(
                     shape = IconButtonDefaults.largeRoundShape,
                     pressedShape = IconButtonDefaults.largePressedShape,
                 ),
                 modifier = Modifier
-                    .animateWidth(interactionSource)
                     .size(IconButtonDefaults.largeContainerSize())
+                    .animateWidth(interactionSource)
                     .then(modifier),
                 interactionSource = interactionSource,
                 content = icon,
@@ -935,10 +1153,15 @@ private fun ButtonGroupScope.toolbarItem(
     onClick: () -> Unit,
     extraLabel: String? = null,
     active: Boolean = false,
+    overflowOnly: Boolean = false,
     icon: @Composable () -> Unit,
 ) {
     customItem(
         buttonGroupContent = {
+            if (overflowOnly) {
+                Spacer(Modifier.width(10_000.dp))
+                return@customItem
+            }
             val interactionSource = remember { MutableInteractionSource() }
             PlayerToolbarButton(
                 active = active,
@@ -1038,6 +1261,111 @@ private fun PlayerToolbarButton(
             contentPadding = padding,
             interactionSource = interactionSource,
             content = content,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MorphingChapterSlider(
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+    enabled: Boolean,
+    collapseProgress: Float,
+    thumbAlpha: Float,
+    modifier: Modifier = Modifier,
+) {
+    val colors = SliderDefaults.colors()
+    val interactionSource = remember { MutableInteractionSource() }
+    val thumbGap = lerp(6.dp, 0.dp, collapseProgress)
+    val thumbSize = DpSize(4.dp, lerp(44.dp, 4.dp, collapseProgress))
+    val scheme = MaterialTheme.colorScheme
+    val activeColor = lerpColor(
+        scheme.primary,
+        scheme.primary.copy(alpha = 0.28f),
+        collapseProgress,
+    )
+    val inactiveColor = lerpColor(
+        scheme.secondaryContainer,
+        scheme.secondaryContainer.copy(alpha = 0f),
+        collapseProgress,
+    )
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier.graphicsLayer { clip = false },
+            enabled = enabled,
+            colors = colors,
+            interactionSource = interactionSource,
+            thumb = {
+                Box(Modifier.graphicsLayer { alpha = thumbAlpha }) {
+                    SliderDefaults.Thumb(
+                        interactionSource = interactionSource,
+                        colors = colors,
+                        enabled = true,
+                        thumbSize = thumbSize,
+                    )
+                }
+            },
+            track = { sliderState ->
+                val fraction = sliderState.coercedValueAsFraction.coerceIn(0f, 1f)
+                Canvas(Modifier.fillMaxSize()) {
+                    val radius = size.height / 2f
+                    val corner = CornerRadius(radius, radius)
+                    val split = size.width * fraction
+                    val gapPx = thumbGap.toPx() +
+                        (thumbSize.width.toPx() / 2f) * (1f - collapseProgress)
+                    if (gapPx < 1f) {
+                        val pill = Path().apply {
+                            addRoundRect(
+                                RoundRect(
+                                    left = 0f,
+                                    top = 0f,
+                                    right = size.width,
+                                    bottom = size.height,
+                                    cornerRadius = corner,
+                                ),
+                            )
+                        }
+                        clipPath(pill) {
+                            drawRect(inactiveColor)
+                            drawRect(
+                                color = activeColor,
+                                size = Size(split.coerceAtLeast(0f), size.height),
+                            )
+                        }
+                    } else {
+                        val activeEnd = (split - gapPx).coerceAtLeast(0f)
+                        val inactiveStart = (split + gapPx).coerceAtMost(size.width)
+                        if (activeEnd > 0f) {
+                            drawRoundRect(
+                                color = activeColor,
+                                size = Size(activeEnd, size.height),
+                                cornerRadius = corner,
+                            )
+                        }
+                        val inactiveWidth = size.width - inactiveStart
+                        if (inactiveWidth > 0f) {
+                            drawRoundRect(
+                                color = inactiveColor,
+                                topLeft = Offset(inactiveStart, 0f),
+                                size = Size(inactiveWidth, size.height),
+                                cornerRadius = corner,
+                            )
+                        }
+                        if (thumbAlpha > 0.05f && inactiveWidth > radius * 2f) {
+                            drawCircle(
+                                color = activeColor,
+                                radius = 2.dp.toPx(),
+                                center = Offset(size.width - radius, radius),
+                            )
+                        }
+                    }
+                }
+            },
+            valueRange = valueRange,
         )
     }
 }
@@ -1261,14 +1589,6 @@ private fun SleepSheet(
                 )
             },
         )
-        SleepOptionRow(
-            title = "End of book",
-            selected = timer is SleepTimer.EndOfBook,
-            onClick = {
-                if (timer is SleepTimer.EndOfBook) onSetTimer(null) else onSetTimer(SleepTimer.EndOfBook)
-            },
-            showDivider = true,
-        )
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -1332,100 +1652,134 @@ private fun SleepStepper(
 private fun ChapterListSheet(
     titles: List<String>,
     durationsMs: List<Long>,
+    chapterStartMs: List<Long>,
+    bookPositionMs: Long,
     currentIndex: Int,
     positionsMs: Map<Int, Long>,
+    completedChapters: Set<Int>,
     onSelect: (Int) -> Unit,
+    onSetChaptersPlayed: (Collection<Int>, Boolean) -> Unit,
+    onSnapshotMarks: () -> ChapterMarksSnapshot,
+    onRestoreMarks: (ChapterMarksSnapshot) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val colors = MaterialTheme.colorScheme
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var revealedIndex by remember { mutableStateOf<Int?>(null) }
+    var pendingPlayed by remember { mutableStateOf<Set<Int>?>(null) }
     LaunchedEffect(currentIndex) {
         if (titles.isNotEmpty()) {
             listState.scrollToItem(currentIndex.coerceIn(0, titles.lastIndex))
         }
     }
+
+    fun applyPlayed(indices: Set<Int>, bulk: Boolean) {
+        val snapshot = onSnapshotMarks()
+        onSetChaptersPlayed(indices, true)
+        if (bulk) {
+            scope.showBulkChapterSnackbar(
+                host = snackbarHostState,
+                count = indices.size,
+                played = true,
+                snapshot = snapshot,
+                restore = onRestoreMarks,
+            )
+        }
+    }
+
+    fun applyUnplayed(index: Int) {
+        onSetChaptersPlayed(setOf(index), false)
+    }
+
+    fun requestMarkPlayed(index: Int) {
+        val previousIncomplete = (0 until index).any { it !in completedChapters }
+        if (index > 0 && previousIncomplete) {
+            pendingPlayed = setOf(index)
+        } else {
+            applyPlayed(setOf(index), bulk = false)
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        Text(
-            text = "Chapters",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        )
-        LazyColumn(state = listState) {
-            itemsIndexed(titles) { index, title ->
-                val selected = index == currentIndex
-                val duration = durationsMs.getOrNull(index) ?: 0L
-                val position = positionsMs[index] ?: 0L
-                val progress = if (duration > 0L) {
-                    (position.toFloat() / duration).coerceIn(0f, 1f)
-                } else {
-                    0f
-                }
-                val showProgress = progress > 0.02f && progress < 0.98f
-                Column {
-                    if (index > 0 && !selected && currentIndex != index - 1) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 56.dp, end = 20.dp),
-                            color = colors.outlineVariant.copy(alpha = 0.6f),
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 2.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (selected) colors.surfaceContainerHigh else Color.Transparent)
-                            .clickable {
+        Box(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Chapters",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+                LazyColumn(state = listState) {
+                    itemsIndexed(titles) { index, title ->
+                        val selected = index == currentIndex
+                        val duration = durationsMs.getOrNull(index) ?: 0L
+                        val complete = index in completedChapters
+                        val progress = if (complete) {
+                            1f
+                        } else {
+                            chapterListenProgress(
+                                index = index,
+                                durationMs = duration,
+                                bookPositionMs = bookPositionMs,
+                                chapterStartMs = chapterStartMs,
+                                chapterDurationsMs = durationsMs,
+                                savedPositionsMs = positionsMs,
+                            )
+                        }
+                        SwipeableChapterRow(
+                            index = index,
+                            title = title,
+                            durationMs = duration,
+                            progress = progress,
+                            complete = complete,
+                            selected = selected,
+                            showDivider = index > 0 && !selected && currentIndex != index - 1,
+                            revealed = revealedIndex == index,
+                            swipeEnabled = true,
+                            onClick = {
                                 onSelect(index)
                                 onDismiss()
-                            }
-                            .padding(horizontal = 12.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "${index + 1}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.width(28.dp),
-                            color = if (selected) colors.primary else colors.onSurfaceVariant,
+                            },
+                            onRevealedChange = { open ->
+                                revealedIndex = if (open) {
+                                    index
+                                } else if (revealedIndex == index) {
+                                    null
+                                } else {
+                                    revealedIndex
+                                }
+                            },
+                            onMarkPlayed = { requestMarkPlayed(index) },
+                            onMarkUnplayed = { applyUnplayed(index) },
                         )
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 12.dp),
-                        ) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (showProgress) {
-                                LinearProgressIndicator(
-                                    progress = { progress },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8.dp)
-                                        .height(3.dp)
-                                        .clip(RoundedCornerShape(2.dp)),
-                                    strokeCap = StrokeCap.Butt,
-                                    gapSize = 0.dp,
-                                    drawStopIndicator = {},
-                                )
-                            }
-                        }
-                        if (duration > 0L) {
-                            Text(
-                                text = formatMinutes(duration),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.onSurfaceVariant,
-                            )
-                        }
                     }
                 }
             }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp),
+            )
+        }
+        pendingPlayed?.let { indices ->
+            val lowest = indices.minOrNull() ?: 0
+            val previousCount = (0 until lowest).count { it !in completedChapters }
+            MarkPreviousChaptersDialog(
+                previousCount = previousCount,
+                onMarkPrevious = {
+                    pendingPlayed = null
+                    applyPlayed((0 until lowest).toSet() + indices, bulk = true)
+                },
+                onOnlyThese = {
+                    pendingPlayed = null
+                    applyPlayed(indices, bulk = false)
+                },
+                onDismiss = { pendingPlayed = null },
+            )
         }
     }
 }

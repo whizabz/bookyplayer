@@ -15,8 +15,8 @@ object BookyIcons {
     val pause: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_pause)
     val timer: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_timer)
     val cast: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_cast)
-    val skipBack: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_replay_10)
-    val skipForward: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_forward_10)
+    val skipBack: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_replay)
+    val skipForward: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_forward)
     val bookmark: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_bookmark)
     val chapters: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_list)
     val more: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_more_horiz)
@@ -42,4 +42,5 @@ object BookyIcons {
     val speed: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_speed)
     val trimSilence: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_content_cut)
     val autoSkipping: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_autoplay)
+    val repeat: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_repeat)
 }
