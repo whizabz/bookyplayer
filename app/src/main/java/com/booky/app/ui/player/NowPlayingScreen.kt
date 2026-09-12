@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -100,11 +101,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.lerp as lerpTextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -131,6 +134,16 @@ private enum class PlayerAnchor { Expanded, Mini, Hidden }
 private val MiniPlayerHeight = 64.dp
 private val MiniPlayerInset = 12.dp
 private val MiniPlayerWidth = 348.dp
+private val MiniPlaySize = 40.dp
+private val MiniSkipSize = 40.dp
+private val MiniTransportGap = 6.dp
+
+private class ExpandedSlotLock {
+    var play by mutableStateOf<Offset?>(null)
+    var skip by mutableStateOf<Offset?>(null)
+    var slider by mutableStateOf<Offset?>(null)
+    var sliderSize by mutableStateOf<IntSize?>(null)
+}
 private val MiniCoverSize = 40.dp
 private val MiniTitleWidth = 180.dp
 
@@ -202,6 +215,8 @@ fun NowPlayingScreen(
     BackHandler(enabled = expanded) {
         settleTo(PlayerAnchor.Mini)
     }
+
+    val slotLock = remember(player.book?.id) { ExpandedSlotLock() }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val navPx = WindowInsets.navigationBars.getBottom(density).toFloat()
@@ -279,6 +294,55 @@ fun NowPlayingScreen(
             state = dragState,
             animationSpec = spatialSpec,
         )
+        val slotsReady = slotLock.play != null && slotLock.skip != null
+        val probeWidth = fullWidthPx.roundToInt()
+        val probeHeight = fullHeightPx.roundToInt()
+        if (!slotsReady && probeWidth > 0 && probeHeight > 0) {
+            Box(
+                Modifier.layout { measurable, _ ->
+                    val placeable = measurable.measure(
+                        Constraints.fixed(probeWidth, probeHeight),
+                    )
+                    layout(0, 0) {
+                        placeable.place(-probeWidth, 0)
+                    }
+                },
+            ) {
+                NowPlayingContent(
+                    player = player,
+                    collapseProgress = 0f,
+                    chromeFade = 0f,
+                    miniFade = 0f,
+                    fullWidthPx = fullWidthPx,
+                    fullHeightPx = fullHeightPx,
+                    miniWidthPx = miniWidthPx,
+                    miniHeightPx = miniHeightPx,
+                    surfaceLeftPx = 0f,
+                    surfaceTopPx = 0f,
+                    miniSurfaceLeftPx = 0f,
+                    miniSurfaceTopPx = 0f,
+                    transportSettled = true,
+                    slotLock = slotLock,
+                    measurementOnly = true,
+                    onExpand = {},
+                    onTogglePlay = {},
+                    onSkip = {},
+                    onSeek = {},
+                    onSeekChapter = {},
+                    onSetSpeed = {},
+                    onSetSleepTimer = {},
+                    onRestartChapter = {},
+                    onMarkChapterPlayed = {},
+                    onMarkBookPlayed = {},
+                    onSetChaptersPlayed = { _, _ -> },
+                    onSnapshotMarks = onSnapshotMarks,
+                    onRestoreMarks = {},
+                    onToggleRepeat = {},
+                    onCloseBook = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
         if (scrimFade > 0.01f) {
             Box(
                 modifier = Modifier
@@ -370,6 +434,7 @@ fun NowPlayingScreen(
                     screenOffsetPx,
                 miniSurfaceTopPx = fullHeightPx - navPx - screenOffsetPx - miniHeightPx,
                 transportSettled = !dragState.isAnimationRunning && collapseProgress < 0.02f,
+                slotLock = slotLock,
                 onExpand = { settleTo(PlayerAnchor.Expanded) },
                 onTogglePlay = onTogglePlay,
                 onSkip = onSkip,
@@ -407,6 +472,8 @@ private fun NowPlayingContent(
     miniSurfaceLeftPx: Float,
     miniSurfaceTopPx: Float,
     transportSettled: Boolean,
+    slotLock: ExpandedSlotLock,
+    measurementOnly: Boolean = false,
     onExpand: () -> Unit,
     onTogglePlay: () -> Unit,
     onSkip: (Long) -> Unit,
@@ -441,27 +508,23 @@ private fun NowPlayingContent(
     var playSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var skipSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var sliderSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var playExpandedLocked by remember { mutableStateOf<Offset?>(null) }
-    var skipExpandedLocked by remember { mutableStateOf<Offset?>(null) }
-    var sliderExpandedLocked by remember { mutableStateOf<Offset?>(null) }
-    var sliderExpandedSizeLocked by remember { mutableStateOf<IntSize?>(null) }
     val chapterDuration = player.chapterDurationMs.toFloat().coerceAtLeast(1f)
     val chapterPosition = player.chapterPositionMs.toFloat().coerceIn(0f, chapterDuration)
     val fadeOut = chromeFade
     val playExpanded = IconButtonDefaults.extraLargeContainerSize()
     val skipExpanded = IconButtonDefaults.largeContainerSize()
-    val playSize = lerpSize(playExpanded, DpSize(40.dp, 40.dp), collapseProgress)
-    val skipSize = lerpSize(skipExpanded, DpSize(48.dp, 48.dp), collapseProgress)
+    val playSize = lerpSize(playExpanded, DpSize(MiniPlaySize, MiniPlaySize), collapseProgress)
+    val skipSize = lerpSize(skipExpanded, DpSize(MiniSkipSize, MiniSkipSize), collapseProgress)
     val statusPx = WindowInsets.statusBars.getTop(density).toFloat()
     val padExpPx = with(density) { 20.dp.toPx() }
     val playW = with(density) { playExpanded.width.toPx() }
     val playH = with(density) { playExpanded.height.toPx() }
     val skipW = with(density) { skipExpanded.width.toPx() }
     val skipH = with(density) { skipExpanded.height.toPx() }
-    val playCollapsedW = with(density) { 40.dp.toPx() }
-    val playCollapsedH = with(density) { 40.dp.toPx() }
-    val skipCollapsedW = with(density) { 48.dp.toPx() }
-    val skipCollapsedH = with(density) { 48.dp.toPx() }
+    val playCollapsedW = with(density) { MiniPlaySize.toPx() }
+    val playCollapsedH = with(density) { MiniPlaySize.toPx() }
+    val skipCollapsedW = with(density) { MiniSkipSize.toPx() }
+    val skipCollapsedH = with(density) { MiniSkipSize.toPx() }
     val coverCollapsedPx = with(density) { MiniCoverSize.toPx() }
     val coverExpandedSize = (fullWidthPx - padExpPx * 2f).coerceAtLeast(coverCollapsedPx)
     val coverExpandedOffset = Offset(
@@ -477,23 +540,23 @@ private fun NowPlayingContent(
     val measuredSlider = slotOffset(parentCoords, sliderSlot)
     val measuredSliderSize = sliderSlot?.takeIf { it.isAttached }?.size
     SideEffect {
-        if (transportSettled) {
-            measuredPlay?.let { playExpandedLocked = it }
-            measuredSkip?.let { skipExpandedLocked = it }
-            measuredSlider?.let { sliderExpandedLocked = it }
-            measuredSliderSize?.let { sliderExpandedSizeLocked = it }
+        if (measurementOnly || transportSettled) {
+            measuredPlay?.let { slotLock.play = it }
+            measuredSkip?.let { slotLock.skip = it }
+            measuredSlider?.let { slotLock.slider = it }
+            measuredSliderSize?.let { slotLock.sliderSize = it }
         }
     }
-    val playExpandedOffset = playExpandedLocked
+    val playExpandedOffset = slotLock.play
         ?: measuredPlay.takeIf { transportSettled }
         ?: Offset(
             (fullWidthPx - playW) / 2f,
             fullHeightPx * 0.72f,
         )
-    val skipExpandedOffset = skipExpandedLocked
+    val skipExpandedOffset = slotLock.skip
         ?: measuredSkip.takeIf { transportSettled }
         ?: Offset(
-            playExpandedOffset.x - with(density) { 8.dp.toPx() } - skipW,
+            playExpandedOffset.x - with(density) { 2.dp.toPx() } - skipW,
             playExpandedOffset.y + (playH - skipH) / 2f,
         )
     val coverCollapsedOffset = Offset(
@@ -505,7 +568,7 @@ private fun NowPlayingContent(
         (miniHeightPx - playCollapsedH) / 2f,
     )
     val skipCollapsedLocal = Offset(
-        playCollapsedLocal.x - skipCollapsedW,
+        playCollapsedLocal.x - with(density) { MiniTransportGap.toPx() } - skipCollapsedW,
         (miniHeightPx - skipCollapsedH) / 2f,
     )
     val playExpandedScreen = Offset(
@@ -545,19 +608,19 @@ private fun NowPlayingContent(
         collapseProgress,
     )
     val coverCorner = lerp(16.dp, MiniCoverSize / 2f, collapseProgress)
-    val sliderExpandedSize = sliderExpandedSizeLocked
+    val sliderExpandedSize = slotLock.sliderSize
         ?: measuredSliderSize.takeIf { transportSettled }
         ?: IntSize(
             (fullWidthPx - padExpPx * 2f).roundToInt(),
             with(density) { 48.dp.roundToPx() },
         )
-    val sliderExpandedOffset = sliderExpandedLocked
+    val sliderExpandedOffset = slotLock.slider
         ?: measuredSlider.takeIf { transportSettled }
         ?: Offset(
             padExpPx,
             titleExpandedOffset.y + with(density) { (56.dp + 12.dp + 48.dp + 8.dp).toPx() },
         )
-    val showTransportOverlay = !transportSettled
+    val showTransportOverlay = !measurementOnly && !transportSettled
     val sliderMiniOffset = Offset(0f, 0f)
     val sliderMiniSize = IntSize(
         miniWidthPx.roundToInt(),
@@ -715,6 +778,7 @@ private fun NowPlayingContent(
                         menuLabel = "Back ${player.skipBackSeconds} seconds",
                         onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
                         enabled = !showTransportOverlay,
+                        animatePress = !measurementOnly,
                         modifier = Modifier
                             .onGloballyPositioned { skipSlot = it }
                             .graphicsLayer { alpha = if (showTransportOverlay) 0f else 1f },
@@ -747,7 +811,13 @@ private fun NowPlayingContent(
                                 modifier = Modifier
                                     .size(IconButtonDefaults.extraLargeContainerSize())
                                     .onGloballyPositioned { playSlot = it }
-                                    .animateWidth(interactionSource)
+                                    .then(
+                                        if (measurementOnly) {
+                                            Modifier
+                                        } else {
+                                            Modifier.animateWidth(interactionSource)
+                                        },
+                                    )
                                     .graphicsLayer { alpha = if (showTransportOverlay) 0f else 1f },
                                 interactionSource = interactionSource,
                             ) {
@@ -785,6 +855,7 @@ private fun NowPlayingContent(
                     transportItem(
                         menuLabel = "Forward ${player.skipForwardSeconds} seconds",
                         onClick = { onSkip(player.skipForwardSeconds * 1_000L) },
+                        animatePress = !measurementOnly,
                         icon = {
                             Icon(
                                 BookyIcons.skipForward,
@@ -846,11 +917,6 @@ private fun NowPlayingContent(
                     menuLabel = "Mark chapter as played",
                     onClick = { pendingMarkChapterConfirm = true },
                     icon = { Icon(BookyIcons.check, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Cast",
-                    onClick = {},
-                    icon = { Icon(BookyIcons.cast, contentDescription = "Cast") },
                 )
                 toolbarItem(
                     menuLabel = "Restart chapter",
@@ -952,65 +1018,68 @@ private fun NowPlayingContent(
             }
         }
         if (showTransportOverlay) {
-            FilledTonalIconButton(
-                onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
-                shapes = IconButtonDefaults.shapes(
-                    shape = IconButtonDefaults.largeRoundShape,
-                    pressedShape = IconButtonDefaults.largePressedShape,
-                ),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(),
-                modifier = Modifier
-                    .offset { skipOffset.round() }
-                    .size(skipSize),
-            ) {
-                Icon(
-                    BookyIcons.skipBack,
-                    contentDescription = "Back ${player.skipBackSeconds} seconds",
-                    modifier = Modifier.size(
-                        lerp(
-                            IconButtonDefaults.largeIconSize,
-                            24.dp,
-                            collapseProgress,
-                        ),
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                FilledTonalIconButton(
+                    onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
+                    shapes = IconButtonDefaults.shapes(
+                        shape = IconButtonDefaults.largeRoundShape,
+                        pressedShape = IconButtonDefaults.largePressedShape,
                     ),
-                )
-            }
-            FilledIconToggleButton(
-                checked = player.isPlaying,
-                onCheckedChange = { onTogglePlay() },
-                shapes = IconButtonDefaults.toggleableShapes(
-                    shape = if (collapseProgress > 0.55f) {
-                        RoundedCornerShape(20.dp)
-                    } else {
-                        IconButtonDefaults.extraLargeSquareShape
-                    },
-                    pressedShape = IconButtonDefaults.extraLargePressedShape,
-                    checkedShape = IconButtonDefaults.extraLargeRoundShape,
-                ),
-                colors = IconButtonDefaults.filledIconToggleButtonColors(
-                    containerColor = colors.primary,
-                    contentColor = colors.onPrimary,
-                    checkedContainerColor = colors.primary,
-                    checkedContentColor = colors.onPrimary,
-                ),
-                modifier = Modifier
-                    .offset { playOffset.round() }
-                    .size(playSize),
-            ) {
-                Icon(
-                    imageVector = if (player.isPlaying) BookyIcons.pause else BookyIcons.play,
-                    contentDescription = if (player.isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(
-                        lerp(
-                            IconButtonDefaults.extraLargeIconSize,
-                            24.dp,
-                            collapseProgress,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(),
+                    modifier = Modifier
+                        .offset { skipOffset.round() }
+                        .requiredSize(skipSize),
+                ) {
+                    Icon(
+                        BookyIcons.skipBack,
+                        contentDescription = "Back ${player.skipBackSeconds} seconds",
+                        modifier = Modifier.size(
+                            lerp(
+                                IconButtonDefaults.largeIconSize,
+                                24.dp,
+                                collapseProgress,
+                            ),
                         ),
+                    )
+                }
+                FilledIconToggleButton(
+                    checked = player.isPlaying,
+                    onCheckedChange = { onTogglePlay() },
+                    shapes = IconButtonDefaults.toggleableShapes(
+                        shape = if (collapseProgress > 0.55f) {
+                            RoundedCornerShape(MiniPlaySize / 2f)
+                        } else {
+                            IconButtonDefaults.extraLargeSquareShape
+                        },
+                        pressedShape = IconButtonDefaults.extraLargePressedShape,
+                        checkedShape = IconButtonDefaults.extraLargeRoundShape,
                     ),
-                )
+                    colors = IconButtonDefaults.filledIconToggleButtonColors(
+                        containerColor = colors.primary,
+                        contentColor = colors.onPrimary,
+                        checkedContainerColor = colors.primary,
+                        checkedContentColor = colors.onPrimary,
+                    ),
+                    modifier = Modifier
+                        .offset { playOffset.round() }
+                        .requiredSize(playSize),
+                ) {
+                    Icon(
+                        imageVector = if (player.isPlaying) BookyIcons.pause else BookyIcons.play,
+                        contentDescription = if (player.isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(
+                            lerp(
+                                IconButtonDefaults.extraLargeIconSize,
+                                24.dp,
+                                collapseProgress,
+                            ),
+                        ),
+                    )
+                }
             }
         }
 
+        if (!measurementOnly) {
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -1105,6 +1174,7 @@ private fun NowPlayingContent(
                 onDismiss = { showChapters = false },
             )
         }
+        }
     }
 }
 
@@ -1114,6 +1184,7 @@ private fun ButtonGroupScope.transportItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    animatePress: Boolean = true,
     icon: @Composable () -> Unit,
 ) {
     customItem(
@@ -1128,7 +1199,13 @@ private fun ButtonGroupScope.transportItem(
                 ),
                 modifier = Modifier
                     .size(IconButtonDefaults.largeContainerSize())
-                    .animateWidth(interactionSource)
+                    .then(
+                        if (animatePress) {
+                            Modifier.animateWidth(interactionSource)
+                        } else {
+                            Modifier
+                        },
+                    )
                     .then(modifier),
                 interactionSource = interactionSource,
                 content = icon,

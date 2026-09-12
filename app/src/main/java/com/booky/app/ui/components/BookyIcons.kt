@@ -14,7 +14,6 @@ object BookyIcons {
     val play: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_play_arrow)
     val pause: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_pause)
     val timer: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_timer)
-    val cast: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_cast)
     val skipBack: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_replay)
     val skipForward: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_forward)
     val bookmark: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_bookmark)

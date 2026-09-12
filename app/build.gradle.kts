@@ -57,15 +57,6 @@ android {
     }
 }
 
-android.applicationVariants.configureEach {
-    outputs.configureEach {
-        val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-        if (buildType.name == "release") {
-            output.outputFileName = "booky-player.apk"
-        }
-    }
-}
-
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
