@@ -1,0 +1,4 @@
+storeFile=booky-release.jks
+storePassword=
+keyAlias=booky
+keyPassword=
