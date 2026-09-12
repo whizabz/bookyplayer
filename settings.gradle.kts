@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BookyPlayer"
+rootProject.name = "booky-player"
 include(":app")

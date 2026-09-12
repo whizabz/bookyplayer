@@ -12,11 +12,11 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.booky.app"
+    namespace = "xyz.saltedchips.bookyplayer"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.booky.app"
+        applicationId = "xyz.saltedchips.bookyplayer"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
