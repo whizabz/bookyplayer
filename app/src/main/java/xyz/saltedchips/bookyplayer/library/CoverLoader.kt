@@ -5,9 +5,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.LruCache
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import java.io.ByteArrayOutputStream
 
 object CoverLoader {
+    private val sessionArt = object : LruCache<String, ByteArray>(4) {
+        override fun sizeOf(key: String, value: ByteArray): Int = 1
+    }
+
     fun load(context: Context, book: Audiobook, sampleSize: Int = 2): Bitmap? {
         decodeUri(context, book.coverUri, sampleSize)?.let { return it }
         embedded(context, book.artworkFileUri, sampleSize)?.let { return it }
@@ -16,6 +22,18 @@ object CoverLoader {
             return BitmapFactory.decodeResource(context.resources, book.coverRes, options)
         }
         return null
+    }
+
+    fun sessionArtwork(context: Context, book: Audiobook): ByteArray? {
+        val key = "${book.id}|${book.coverUri.orEmpty()}|${book.artworkFileUri.orEmpty()}|${book.coverRes}"
+        sessionArt.get(key)?.let { return it }
+        val bitmap = load(context, book, sampleSize = 2) ?: return null
+        val bytes = ByteArrayOutputStream().use { stream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+            stream.toByteArray()
+        }
+        sessionArt.put(key, bytes)
+        return bytes
     }
 
     private fun decodeUri(context: Context, uriString: String?, sampleSize: Int): Bitmap? {

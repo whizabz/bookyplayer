@@ -1,5 +1,6 @@
 package xyz.saltedchips.bookyplayer.player
 
+import android.content.Context
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -7,27 +8,30 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.library.CoverLoader
 
-fun Audiobook.toMediaItems(): List<MediaItem> {
+fun Audiobook.toMediaItems(context: Context? = null): List<MediaItem> {
     val uris = mediaUris.ifEmpty { listOfNotNull(artworkFileUri) }
-    val artwork = (coverUri ?: artworkFileUri)?.let(Uri::parse)
+    val artworkUri = coverUri?.let(Uri::parse)
+    val artworkData = context?.let { CoverLoader.sessionArtwork(it, this) }
     return uris.mapIndexed { index, uri ->
         val startMs = chapterStartMs.getOrNull(index) ?: 0L
         val durationMs = chapterDurationsMs.getOrNull(index) ?: 0L
         val nextSameFile = uris.getOrNull(index + 1) == uri
+        val metadata = MediaMetadata.Builder()
+            .setTitle(title)
+            .setArtist(author)
+            .setAlbumTitle(title)
+            .setDisplayTitle(chapterTitles.getOrNull(index) ?: currentChapterTitle)
+            .setWriter(narrator.takeIf { it.isNotBlank() && it != "Unknown" })
+            .setArtworkUri(artworkUri)
+        if (artworkData != null) {
+            metadata.setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+        }
         val builder = MediaItem.Builder()
             .setUri(uri)
             .setMediaId("$id#$index")
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist(author)
-                    .setAlbumTitle(title)
-                    .setDisplayTitle(chapterTitles.getOrNull(index) ?: currentChapterTitle)
-                    .setWriter(narrator.takeIf { it.isNotBlank() && it != "Unknown" })
-                    .setArtworkUri(artwork)
-                    .build(),
-            )
+            .setMediaMetadata(metadata.build())
         if (startMs > 0L || nextSameFile) {
             val clip = MediaItem.ClippingConfiguration.Builder()
                 .setStartPositionMs(startMs.coerceAtLeast(0L))

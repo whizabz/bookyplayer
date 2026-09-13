@@ -11,6 +11,7 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -23,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import xyz.saltedchips.bookyplayer.MainActivity
+import xyz.saltedchips.bookyplayer.R
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_BACK
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_FORWARD
 import xyz.saltedchips.bookyplayer.ui.widget.captureNowPlaying
@@ -116,6 +118,9 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, skipPlayer, LibraryCallback())
             .setSessionActivity(sessionActivity)
             .build()
+        val notifications = DefaultMediaNotificationProvider.Builder(this).build()
+        notifications.setSmallIcon(R.drawable.ms_book_2)
+        setMediaNotificationProvider(notifications)
         scheduleWidgetUpdate(skipPlayer)
     }
 

@@ -569,7 +569,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         val book = _state.value.book ?: return
-        val items = book.toMediaItems()
+        val items = book.toMediaItems(getApplication())
         if (items.isEmpty()) return
         if (resetPosition || !isBookLoaded(book)) {
             val index = _state.value.currentChapterIndex.coerceIn(0, items.lastIndex)

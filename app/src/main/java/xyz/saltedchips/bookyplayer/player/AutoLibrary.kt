@@ -9,6 +9,7 @@ import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaSession
 import org.json.JSONObject
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.library.CoverLoader
 import xyz.saltedchips.bookyplayer.library.LibraryCatalogStore
 import xyz.saltedchips.bookyplayer.library.LibrarySort
 
@@ -58,7 +59,7 @@ class AutoLibrary(context: Context) {
         if (chapter != null) {
             val (bookId, index) = chapter
             val book = bookById(bookId) ?: return null
-            val items = book.toMediaItems()
+            val items = book.toMediaItems(appContext)
             if (items.isEmpty()) return null
             val target = index.coerceIn(0, items.lastIndex)
             markStarted(book.id)
@@ -70,7 +71,7 @@ class AutoLibrary(context: Context) {
         }
         val bookId = bookIdFromNode(mediaId) ?: mediaId
         val book = bookById(bookId) ?: return null
-        val items = book.toMediaItems()
+        val items = book.toMediaItems(appContext)
         if (items.isEmpty()) return null
         val position = resumePosition(book)
         val (index, offset) = windowForBookPosition(position, book.chapterDurationsMs)
@@ -229,8 +230,16 @@ class AutoLibrary(context: Context) {
         return map
     }
 
-    private fun artwork(book: Audiobook): Uri? {
-        return (book.coverUri ?: book.artworkFileUri)?.let(Uri::parse)
+    private fun artworkUri(book: Audiobook): Uri? {
+        return book.coverUri?.let(Uri::parse)
+    }
+
+    private fun decorateArtwork(builder: MediaMetadata.Builder, book: Audiobook): MediaMetadata.Builder {
+        artworkUri(book)?.let(builder::setArtworkUri)
+        CoverLoader.sessionArtwork(appContext, book)?.let { bytes ->
+            builder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+        }
+        return builder
     }
 
     private fun browsableItem(mediaId: String, title: String): MediaItem {
@@ -266,16 +275,17 @@ class AutoLibrary(context: Context) {
         playable: Boolean,
         browsable: Boolean,
     ): MediaMetadata {
-        return MediaMetadata.Builder()
-            .setTitle(book.title)
-            .setArtist(book.author)
-            .setAlbumTitle(book.title)
-            .setWriter(book.narrator.takeIf { it.isNotBlank() && it != "Unknown" })
-            .setArtworkUri(artwork(book))
-            .setIsPlayable(playable)
-            .setIsBrowsable(browsable)
-            .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
-            .build()
+        return decorateArtwork(
+            MediaMetadata.Builder()
+                .setTitle(book.title)
+                .setArtist(book.author)
+                .setAlbumTitle(book.title)
+                .setWriter(book.narrator.takeIf { it.isNotBlank() && it != "Unknown" })
+                .setIsPlayable(playable)
+                .setIsBrowsable(browsable)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK),
+            book,
+        ).build()
     }
 
     private fun chapterItems(book: Audiobook): List<MediaItem> {
@@ -290,17 +300,18 @@ class AutoLibrary(context: Context) {
         return MediaItem.Builder()
             .setMediaId("${book.id}#$index")
             .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist(book.author)
-                    .setAlbumTitle(book.title)
-                    .setArtworkUri(artwork(book))
-                    .setIsPlayable(true)
-                    .setIsBrowsable(false)
-                    .setTrackNumber(index + 1)
-                    .setTotalTrackCount(book.chapterCountForBrowse())
-                    .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER)
-                    .build(),
+                decorateArtwork(
+                    MediaMetadata.Builder()
+                        .setTitle(title)
+                        .setArtist(book.author)
+                        .setAlbumTitle(book.title)
+                        .setIsPlayable(true)
+                        .setIsBrowsable(false)
+                        .setTrackNumber(index + 1)
+                        .setTotalTrackCount(book.chapterCountForBrowse())
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER),
+                    book,
+                ).build(),
             )
             .build()
     }
