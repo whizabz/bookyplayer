@@ -19,8 +19,8 @@ android {
         applicationId = "xyz.saltedchips.bookyplayer"
         minSdk = 26
         targetSdk = 37
-        versionCode = 20260901
-        versionName = "2026.09.1"
+        versionCode = 20260914
+        versionName = "2026.09.14"
     }
 
     signingConfigs {

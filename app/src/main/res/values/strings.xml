@@ -6,6 +6,8 @@
     <string name="widget_wide_description">Large cover, title, and playback</string>
     <string name="widget_extra_wide_name">Now playing wide</string>
     <string name="widget_extra_wide_description">Larger cover with play and skip</string>
+    <string name="widget_medium_name">Mini player</string>
+    <string name="widget_medium_description">Large cover with title and playback</string>
     <string name="widget_preview_title">Booky Player</string>
     <string name="widget_preview_author">Now playing</string>
 </resources>

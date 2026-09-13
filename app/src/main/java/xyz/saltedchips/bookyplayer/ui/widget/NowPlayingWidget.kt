@@ -39,6 +39,7 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.padding
@@ -77,6 +78,10 @@ open class NowPlayingWidget : GlanceAppWidget() {
 
 class SquareNowPlayingWidget : NowPlayingWidget()
 
+class MediumNowPlayingWidget : NowPlayingWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+}
+
 class WideNowPlayingWidget : NowPlayingWidget() {
     override val sizeMode: SizeMode = SizeMode.Exact
 }
@@ -87,12 +92,16 @@ class SquareNowPlayingWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget = SquareNowPlayingWidget()
 }
 
-class WideNowPlayingWidgetReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget = WideNowPlayingWidget()
-}
-
 class ExtraWideNowPlayingWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget = ExtraWideNowPlayingWidget()
+}
+
+class MediumNowPlayingWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget = MediumNowPlayingWidget()
+}
+
+class WideNowPlayingWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget = WideNowPlayingWidget()
 }
 
 @Composable
@@ -128,6 +137,7 @@ private fun NowPlayingContent(snapshot: NowPlayingSnapshot) {
         size == NowPlayingWidget.ULTRA || size.height < 90.dp -> {
             StripNowPlaying(snapshot, coverSize = 56.dp)
         }
+        size.width > size.height * 1.25f -> SideNowPlaying(snapshot)
         else -> StackedNowPlaying(snapshot)
     }
 }
@@ -153,6 +163,69 @@ private fun SquareNowPlaying(snapshot: NowPlayingSnapshot) {
             contentAlignment = Alignment.BottomEnd,
         ) {
             PlayButton(isPlaying = snapshot.isPlaying, size = 40.dp)
+        }
+    }
+}
+
+@Composable
+private fun SideNowPlaying(snapshot: NowPlayingSnapshot) {
+    val coverSize = LocalSize.current.height - 20.dp
+    Row(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .cornerRadius(24.dp)
+            .background(GlanceTheme.colors.widgetBackground)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = GlanceModifier
+                .size(coverSize)
+                .clickable(openApp()),
+        ) {
+            CoverImage(snapshot, modifier = GlanceModifier.fillMaxSize())
+        }
+        Column(
+            modifier = GlanceModifier
+                .defaultWeight()
+                .fillMaxHeight()
+                .padding(start = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .clickable(openApp()),
+            ) {
+                Text(
+                    text = snapshot.title.ifBlank { "Booky Player" },
+                    maxLines = 2,
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSurface,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 16.sp,
+                    ),
+                )
+                if (snapshot.author.isNotBlank()) {
+                    Text(
+                        text = snapshot.author,
+                        maxLines = 1,
+                        style = TextStyle(
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 13.sp,
+                        ),
+                    )
+                }
+            }
+            TransportGroup(
+                isPlaying = snapshot.isPlaying,
+                playSize = 52.dp,
+                skipSize = 44.dp,
+                spread = true,
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+            )
         }
     }
 }
@@ -274,6 +347,7 @@ private fun TransportGroup(
     playSize: Dp,
     skipSize: Dp,
     modifier: GlanceModifier = GlanceModifier,
+    spread: Boolean = false,
 ) {
     Row(
         modifier = modifier,
@@ -286,9 +360,17 @@ private fun TransportGroup(
             action = PlaybackService.ACTION_WIDGET_SEEK_BACK,
             size = skipSize,
         )
-        Spacer(GlanceModifier.width(2.dp))
+        if (spread) {
+            Spacer(GlanceModifier.defaultWeight())
+        } else {
+            Spacer(GlanceModifier.width(2.dp))
+        }
         PlayButton(isPlaying = isPlaying, size = playSize)
-        Spacer(GlanceModifier.width(2.dp))
+        if (spread) {
+            Spacer(GlanceModifier.defaultWeight())
+        } else {
+            Spacer(GlanceModifier.width(2.dp))
+        }
         SkipButton(
             icon = R.drawable.ms_forward,
             description = "Seek forward",

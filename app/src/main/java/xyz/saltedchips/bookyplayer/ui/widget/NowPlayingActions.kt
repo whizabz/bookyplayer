@@ -38,8 +38,9 @@ suspend fun refreshNowPlayingWidgets(context: Context) {
         val appWidgetManager = AppWidgetManager.getInstance(app)
         listOf(
             SquareNowPlayingWidgetReceiver::class.java to SquareNowPlayingWidget(),
-            WideNowPlayingWidgetReceiver::class.java to WideNowPlayingWidget(),
             ExtraWideNowPlayingWidgetReceiver::class.java to ExtraWideNowPlayingWidget(),
+            MediumNowPlayingWidgetReceiver::class.java to MediumNowPlayingWidget(),
+            WideNowPlayingWidgetReceiver::class.java to WideNowPlayingWidget(),
         ).forEach { (receiver, widget) ->
             appWidgetManager.getAppWidgetIds(ComponentName(app, receiver)).forEach { appWidgetId ->
                 val glanceId = try {
@@ -58,7 +59,8 @@ suspend fun refreshNowPlayingWidgets(context: Context) {
         }
         NowPlayingWidget().updateAll(app)
         SquareNowPlayingWidget().updateAll(app)
-        WideNowPlayingWidget().updateAll(app)
         ExtraWideNowPlayingWidget().updateAll(app)
+        MediumNowPlayingWidget().updateAll(app)
+        WideNowPlayingWidget().updateAll(app)
     }
 }
