@@ -1140,7 +1140,6 @@ private fun NowPlayingContent(
             ChapterListSheet(
                 titles = book.chapterTitles.ifEmpty { listOf(book.currentChapterTitle) },
                 durationsMs = book.chapterDurationsMs,
-                chapterStartMs = book.chapterStartMs,
                 bookPositionMs = player.bookPositionMs,
                 currentIndex = player.currentChapterIndex,
                 isPlaying = player.isPlaying,
@@ -1783,7 +1782,6 @@ private fun SleepStepper(
 private fun ChapterListSheet(
     titles: List<String>,
     durationsMs: List<Long>,
-    chapterStartMs: List<Long>,
     bookPositionMs: Long,
     currentIndex: Int,
     isPlaying: Boolean,
@@ -1860,7 +1858,6 @@ private fun ChapterListSheet(
                                 index = index,
                                 durationMs = duration,
                                 bookPositionMs = bookPositionMs,
-                                chapterStartMs = chapterStartMs,
                                 chapterDurationsMs = durationsMs,
                                 savedPositionsMs = positionsMs,
                             )

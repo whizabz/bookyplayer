@@ -88,7 +88,8 @@ class AutoLibrary(context: Context) {
         val bookId = bookIdFromMediaId(mediaId) ?: return
         val book = bookById(bookId) ?: return
         val duration = book.durationMs.coerceAtLeast(1L)
-        val position = player.bookPositionMs().coerceIn(0L, duration)
+        val position = player.bookPositionMs(book.chapterDurationsMs, book.chapterStartMs)
+            .coerceIn(0L, duration)
         prefs.edit()
             .putString(KEY_BOOK_ID, bookId)
             .putLong(KEY_POSITION, position)

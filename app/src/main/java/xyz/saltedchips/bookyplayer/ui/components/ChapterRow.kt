@@ -32,18 +32,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.data.formatMinutes
+import xyz.saltedchips.bookyplayer.player.chapterBookStartMs
 
 fun chapterListenProgress(
     index: Int,
     durationMs: Long,
     bookPositionMs: Long,
-    chapterStartMs: List<Long>,
     chapterDurationsMs: List<Long>,
     savedPositionsMs: Map<Int, Long>,
 ): Float {
     if (durationMs <= 0L) return 0f
-    val start = chapterStartMs.getOrNull(index)
-        ?: chapterDurationsMs.take(index).sumOf { it.coerceAtLeast(0L) }
+    val start = chapterBookStartMs(chapterDurationsMs, index)
     val end = start + durationMs
     val fromBook = when {
         bookPositionMs >= end - 2_000L -> durationMs
@@ -64,7 +63,6 @@ fun Audiobook.chapterListenProgress(
         index = index,
         durationMs = duration,
         bookPositionMs = bookPositionMs,
-        chapterStartMs = chapterStartMs,
         chapterDurationsMs = chapterDurationsMs,
         savedPositionsMs = savedPositionsMs,
     )

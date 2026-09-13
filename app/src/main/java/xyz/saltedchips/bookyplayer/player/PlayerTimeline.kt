@@ -53,18 +53,79 @@ fun windowForBookPosition(positionMs: Long, durations: List<Long>): Pair<Int, Lo
     return durations.lastIndex to remaining
 }
 
-fun Player.bookPositionMs(): Long {
+fun Player.chapterWindows(): Pair<List<Long>, List<Long>> {
+    val count = mediaItemCount
+    if (count <= 0) return emptyList<Long>() to emptyList()
+    val starts = ArrayList<Long>(count)
+    val durations = ArrayList<Long>(count)
+    val window = Timeline.Window()
     val timeline = currentTimeline
-    if (timeline.isEmpty) return currentPosition.coerceAtLeast(0L)
+    for (i in 0 until count) {
+        val clip = getMediaItemAt(i).clippingConfiguration
+        val start = clip.startPositionMs.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+        val end = clip.endPositionMs
+        val fromClip = if (end != C.TIME_END_OF_SOURCE && end > start) end - start else C.TIME_UNSET
+        val fromWindow = if (!timeline.isEmpty && i < timeline.windowCount) {
+            timeline.getWindow(i, window)
+            window.durationMs
+        } else {
+            C.TIME_UNSET
+        }
+        val length = when {
+            fromClip != C.TIME_UNSET && fromClip > 0L -> fromClip
+            fromWindow != C.TIME_UNSET && fromWindow > 0L -> fromWindow
+            else -> 0L
+        }
+        starts += start
+        durations += length
+    }
+    return starts to durations
+}
+
+fun Player.inChapterPositionMs(
+    durations: List<Long> = emptyList(),
+    starts: List<Long> = emptyList(),
+): Long {
+    val index = currentMediaItemIndex.coerceAtLeast(0)
+    val catalogDuration = durations.getOrNull(index) ?: 0L
+    val startMs = starts.getOrNull(index) ?: 0L
+    val playerDuration = duration.takeIf { it != C.TIME_UNSET && it > 0L }
+    return inChapterPositionMs(
+        currentPositionMs = currentPosition,
+        chapterStartMs = startMs,
+        chapterDurationMs = catalogDuration,
+        playerDurationMs = playerDuration,
+    )
+}
+
+fun Player.bookPositionMs(
+    durations: List<Long> = emptyList(),
+    starts: List<Long> = emptyList(),
+): Long {
+    val index = currentMediaItemIndex.coerceAtLeast(0)
+    val windows = if (durations.isEmpty() || starts.isEmpty()) chapterWindows() else null
+    val catalogDurations = durations.ifEmpty { windows?.second.orEmpty() }
+    val catalogStarts = starts.ifEmpty { windows?.first.orEmpty() }
+    val prior = if (catalogDurations.isNotEmpty()) {
+        chapterBookStartMs(catalogDurations, index)
+    } else {
+        priorWindowDurationMs(index)
+    }
+    return prior + inChapterPositionMs(catalogDurations, catalogStarts)
+}
+
+private fun Player.priorWindowDurationMs(index: Int): Long {
+    val timeline = currentTimeline
+    if (timeline.isEmpty) return 0L
     var prior = 0L
     val window = Timeline.Window()
-    val index = currentMediaItemIndex.coerceAtLeast(0)
-    for (i in 0 until index) {
+    val last = index.coerceAtMost(timeline.windowCount)
+    for (i in 0 until last) {
         timeline.getWindow(i, window)
         val duration = window.durationMs
         if (duration != C.TIME_UNSET) prior += duration
     }
-    return prior + currentPosition.coerceAtLeast(0L)
+    return prior
 }
 
 fun Player.currentChapterDurationMs(fallback: Long): Long {
@@ -106,16 +167,27 @@ fun Player.seekToBookPosition(positionMs: Long, durations: List<Long> = emptyLis
     for (i in 0 until timeline.windowCount) {
         timeline.getWindow(i, window)
         val duration = window.durationMs
+        val catalog = durations.getOrNull(i)?.takeIf { it > 0L }
         val length = if (duration == C.TIME_UNSET || duration <= 0L) {
-            durations.getOrNull(i)?.takeIf { it > 0L } ?: Long.MAX_VALUE
+            catalog ?: Long.MAX_VALUE
         } else {
             duration
         }
         if (remaining < length || i == last) {
-            val seekPos = if (duration == C.TIME_UNSET) remaining else remaining.coerceAtMost(duration)
-            seekTo(i, seekPos.coerceAtLeast(0L))
+            val windowDuration = duration.takeIf { it != C.TIME_UNSET && it > 0L }
+            val seekPos = inWindowSeekPosition(remaining, windowDuration, catalog)
+            seekTo(i, seekPos)
             return
         }
         remaining -= length
     }
+}
+
+fun Player.skipBookPosition(deltaMs: Long, durations: List<Long> = emptyList(), starts: List<Long> = emptyList()) {
+    val catalogDurations = durations.ifEmpty { chapterWindows().second }
+    val catalogStarts = starts.ifEmpty { chapterWindows().first }
+    val fallbackDuration = catalogDurations.sumOf { it.coerceAtLeast(0L) }
+    val duration = bookDurationMs(fallbackDuration.coerceAtLeast(1L))
+    val target = (bookPositionMs(catalogDurations, catalogStarts) + deltaMs).coerceIn(0L, duration)
+    seekToBookPosition(target, catalogDurations)
 }

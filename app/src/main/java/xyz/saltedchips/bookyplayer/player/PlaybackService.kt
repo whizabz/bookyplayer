@@ -267,6 +267,13 @@ class PlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            if (mediaItems.size > 1) {
+                val items = resolve(mediaItems)?.mediaItems ?: mediaItems
+                applyPlaybackPrefs()
+                return Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(items, startIndex, startPositionMs),
+                )
+            }
             val resolved = resolve(mediaItems)
                 ?: return Futures.immediateFuture(
                     MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs),
@@ -325,16 +332,10 @@ private class SkipAwarePlayer(
     override fun getSeekForwardIncrement(): Long = forwardIncrementMs
 
     override fun seekBack() {
-        seekTo((currentPosition - backIncrementMs).coerceAtLeast(0L))
+        skipBookPosition(-backIncrementMs)
     }
 
     override fun seekForward() {
-        val duration = duration
-        val target = currentPosition + forwardIncrementMs
-        if (duration == C.TIME_UNSET) {
-            seekTo(target)
-        } else {
-            seekTo(target.coerceAtMost(duration))
-        }
+        skipBookPosition(forwardIncrementMs)
     }
 }

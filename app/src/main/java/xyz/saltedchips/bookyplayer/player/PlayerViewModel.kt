@@ -99,7 +99,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { connect() }
     }
 
-    fun selectBook(book: Audiobook, play: Boolean = false) {
+    fun selectBook(book: Audiobook, play: Boolean = false, startChapter: Int? = null) {
         pausedAtElapsedMs = 0L
         val sameBook = _state.value.book?.id == book.id
         if (sameBook) {
@@ -107,44 +107,49 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 current.copy(book = book.withChapter(current.book))
             }
             persist()
+            if (startChapter != null) {
+                seekToChapter(startChapter)
+                if (play) {
+                    controller?.playWhenReady = true
+                    controller?.play()
+                }
+                return
+            }
             loadCurrentBook(playWhenReady = controller?.isPlaying == true, resetPosition = false)
             return
         }
+        rememberCurrentChapter()
+        persistChapterProgress()
+        loadChapterProgress(book.id)
         val storedId = prefs.getString(KEY_BOOK_ID, null)
         val storedPosition = prefs.getLong(KEY_POSITION, book.listenedMs)
-        val bookPosition = when {
+        val resumePosition = when {
             storedId == book.id && storedPosition > book.listenedMs -> {
                 storedPosition.coerceIn(0L, book.durationMs.coerceAtLeast(1L))
             }
             else -> book.listenedMs.coerceIn(0L, book.durationMs.coerceAtLeast(1L))
         }
-        rememberCurrentChapter()
-        persistChapterProgress()
-        val (index, offset) = windowForBookPosition(bookPosition, book.chapterDurationsMs)
-        _state.update {
-            it.copy(
-                book = book.copy(
-                    currentChapter = index + 1,
-                    currentChapterTitle = book.chapterTitles.getOrNull(index) ?: book.currentChapterTitle,
-                ),
-                isPlaying = false,
-                chapterPositionMs = offset,
-                chapterDurationMs = book.chapterDurationsMs.getOrNull(index)?.coerceAtLeast(1L) ?: 1L,
-                bookPositionMs = bookPosition,
-                bookDurationMs = book.durationMs.coerceAtLeast(1L),
-                currentChapterIndex = index,
-                finished = bookPosition >= book.durationMs && book.durationMs > 0,
-            )
+        val last = (book.playlistSize() - 1).coerceAtLeast(0)
+        val (index, offset) = if (startChapter != null) {
+            val target = startChapter.coerceIn(0, last)
+            target to restoredChapterPosition(target)
+        } else {
+            windowForBookPosition(resumePosition, book.chapterDurationsMs)
         }
-        loadChapterProgress(book.id)
-        loadCompletedChapters(book, bookPosition)
+        applyChapterWindow(book, index, offset)
+        loadCompletedChapters(book, resumePosition)
         persist(captureChapter = false)
         loadCurrentBook(playWhenReady = play, resetPosition = true)
     }
 
     fun playFromChapter(book: Audiobook, index: Int) {
         if (_state.value.book?.id != book.id) {
-            selectBook(book, play = true)
+            selectBook(book, play = true, startChapter = index)
+            val player = controller
+            if (player == null) {
+                playWhenReadyAfterConnect = true
+            }
+            return
         }
         seekToChapter(index)
         val player = controller
@@ -233,11 +238,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun skip(deltaMs: Long) {
         val player = controller ?: return
-        if (_state.value.book == null) return
+        val book = _state.value.book ?: return
         rememberCurrentChapter()
-        val duration = player.bookDurationMs(_state.value.bookDurationMs)
-        val target = (player.bookPositionMs() + deltaMs).coerceIn(0L, duration)
-        player.seekToBookPosition(target, _state.value.book?.chapterDurationsMs.orEmpty())
+        player.skipBookPosition(deltaMs, book.chapterDurationsMs, book.chapterStartMs)
         publishFromPlayer()
         persist()
     }
@@ -251,12 +254,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seekToChapter(index: Int) {
-        val player = controller ?: return
+        val book = _state.value.book ?: return
         rememberCurrentChapter()
         persistChapterProgress()
-        val last = (player.mediaItemCount - 1).coerceAtLeast(0)
+        val last = (book.playlistSize() - 1).coerceAtLeast(0)
         val target = index.coerceIn(0, last)
-        player.seekTo(target, restoredChapterPosition(target))
+        val offset = restoredChapterPosition(target)
+        applyChapterWindow(book, target, offset)
+        val player = controller
+        if (player == null || !isBookLoaded(book)) {
+            loadCurrentBook(playWhenReady = player?.playWhenReady == true, resetPosition = true)
+            persist()
+            return
+        }
+        player.seekTo(target, offset)
         publishFromPlayer()
         persist()
     }
@@ -550,9 +561,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val book = _state.value.book ?: return
         val items = book.toMediaItems()
         if (items.isEmpty()) return
-        val position = _state.value.bookPositionMs
         if (resetPosition || !isBookLoaded(book)) {
-            val (index, offset) = windowForBookPosition(position, book.chapterDurationsMs)
+            val index = _state.value.currentChapterIndex.coerceIn(0, items.lastIndex)
+            val offset = _state.value.chapterPositionMs.coerceAtLeast(0L)
             player.setMediaItems(items, index, offset)
             player.prepare()
         }
@@ -594,12 +605,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val index = player?.currentMediaItemIndex?.coerceAtLeast(0) ?: 0
         val bookDuration = player?.bookDurationMs(book.durationMs.coerceAtLeast(1L))
             ?: book.durationMs.coerceAtLeast(1L)
-        val bookPosition = player?.bookPositionMs()?.coerceIn(0L, bookDuration)
+        val bookPosition = player?.bookPositionMs(book.chapterDurationsMs, book.chapterStartMs)
+            ?.coerceIn(0L, bookDuration)
             ?: book.listenedMs.coerceIn(0L, bookDuration)
         val chapterDuration = player?.currentChapterDurationMs(
             book.chapterDurationsMs.getOrNull(index)?.coerceAtLeast(1L) ?: 1L,
         ) ?: book.chapterDurationsMs.getOrNull(index)?.coerceAtLeast(1L) ?: 1L
-        val chapterPosition = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        val chapterPosition = player?.inChapterPositionMs(book.chapterDurationsMs, book.chapterStartMs)
+            ?: 0L
         loadChapterProgress(book.id)
         loadCompletedChapters(book, bookPosition)
         _state.update {
@@ -633,13 +646,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val index = player.currentMediaItemIndex.coerceAtLeast(0)
         val chapterTitle = book.chapterTitles.getOrNull(index) ?: book.currentChapterTitle
         val bookDuration = player.bookDurationMs(book.durationMs.coerceAtLeast(1L))
-        val bookPosition = player.bookPositionMs().coerceIn(0L, bookDuration)
+        val bookPosition = player.bookPositionMs(book.chapterDurationsMs, book.chapterStartMs)
+            .coerceIn(0L, bookDuration)
         val chapterDuration = player.currentChapterDurationMs(
             book.chapterDurationsMs.getOrNull(index)?.coerceAtLeast(1L) ?: 1L,
         )
-        val chapterPosition = player.currentPosition.coerceAtLeast(0L).let { position ->
-            if (chapterDuration > 1L) position.coerceAtMost(chapterDuration) else position
-        }
+        val chapterPosition = player.inChapterPositionMs(book.chapterDurationsMs, book.chapterStartMs)
+            .let { position ->
+                if (chapterDuration > 1L) position.coerceAtMost(chapterDuration) else position
+            }
         val ended = player.playbackState == Player.STATE_ENDED
         val previousIndex = _state.value.currentChapterIndex
         if (index != previousIndex) {
@@ -723,7 +738,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun rememberCurrentChapter() {
         val index = controller?.currentMediaItemIndex ?: _state.value.currentChapterIndex
-        val position = controller?.currentPosition?.coerceAtLeast(0L) ?: _state.value.chapterPositionMs
+        val book = _state.value.book
+        val position = controller?.inChapterPositionMs(
+            book?.chapterDurationsMs.orEmpty(),
+            book?.chapterStartMs.orEmpty(),
+        ) ?: _state.value.chapterPositionMs
         val duration = _state.value.chapterDurationMs.coerceAtLeast(1L)
         val stored = when {
             position < 1_500L -> 0L
@@ -821,17 +840,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun seedCompletedFromPosition(book: Audiobook, bookPositionMs: Long): Set<Int> {
-        val durations = book.chapterDurationsMs
-        if (durations.isEmpty()) return emptySet()
-        val starts = book.chapterStartMs
-        val done = mutableSetOf<Int>()
-        durations.forEachIndexed { index, duration ->
-            val start = starts.getOrNull(index) ?: durations.take(index).sum()
-            val end = start + duration
-            if (bookPositionMs >= end - 2_000L) done += index
+    private fun applyChapterWindow(book: Audiobook, index: Int, offset: Long) {
+        val last = (book.playlistSize() - 1).coerceAtLeast(0)
+        val target = index.coerceIn(0, last)
+        val duration = book.chapterDurationsMs.getOrNull(target)?.coerceAtLeast(1L) ?: 1L
+        val chapterPosition = offset.coerceIn(0L, duration)
+        val bookPosition = chapterBookStartMs(book.chapterDurationsMs, target) + chapterPosition
+        _state.update {
+            it.copy(
+                book = book.copy(
+                    currentChapter = target + 1,
+                    currentChapterTitle = book.chapterTitles.getOrNull(target) ?: book.currentChapterTitle,
+                ),
+                chapterPositionMs = chapterPosition,
+                chapterDurationMs = duration,
+                bookPositionMs = bookPosition.coerceAtMost(book.durationMs.coerceAtLeast(1L)),
+                bookDurationMs = book.durationMs.coerceAtLeast(1L),
+                currentChapterIndex = target,
+                finished = false,
+            )
         }
-        return done
+    }
+
+    private fun seedCompletedFromPosition(book: Audiobook, bookPositionMs: Long): Set<Int> {
+        return seedCompletedChapterIndices(book.chapterDurationsMs, bookPositionMs)
     }
 
     private fun decodeCompleted(bookId: String): Set<Int> {
@@ -890,6 +922,10 @@ private fun Audiobook.chapterCountForMarks(): Int {
     return chapterTitles.size.takeIf { it > 0 }
         ?: chapterDurationsMs.size.takeIf { it > 0 }
         ?: 1
+}
+
+private fun Audiobook.playlistSize(): Int {
+    return mediaUris.ifEmpty { listOfNotNull(artworkFileUri) }.size.coerceAtLeast(1)
 }
 
 private fun Audiobook.withChapter(previous: Audiobook?): Audiobook {

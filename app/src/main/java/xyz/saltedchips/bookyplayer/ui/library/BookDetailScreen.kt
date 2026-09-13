@@ -340,7 +340,6 @@ fun BookDetailScreen(
                         index = index,
                         durationMs = duration,
                         bookPositionMs = bookPositionMs,
-                        chapterStartMs = book.chapterStartMs,
                         chapterDurationsMs = durations,
                         savedPositionsMs = positions,
                     )
