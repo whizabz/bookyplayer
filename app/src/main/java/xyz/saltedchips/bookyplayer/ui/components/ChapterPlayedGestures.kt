@@ -134,10 +134,10 @@ fun MarkPreviousChaptersDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onMarkPrevious) { Text("Mark previous too") }
+            TextButton(onClick = onMarkPrevious) { Text("Previous too") }
         },
         dismissButton = {
-            TextButton(onClick = onOnlyThese) { Text("Only this chapter") }
+            TextButton(onClick = onOnlyThese) { Text("Only this") }
         },
     )
 }
