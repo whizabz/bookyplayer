@@ -25,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
@@ -354,11 +355,18 @@ fun BookDetailScreen(
                     progress = progress,
                     complete = complete,
                     selected = current && !selecting,
-                    showDivider = index > 0 && !(isActive && (current || player.currentChapterIndex == index - 1)),
+                    itemShapes = ListItemDefaults.segmentedShapes(
+                        index = index,
+                        count = titles.size,
+                    ),
                     revealed = revealedIndex == index,
                     swipeEnabled = !selecting,
                     selecting = selecting,
                     checked = index in selectedIndices,
+                    playing = current && playing,
+                    modifier = Modifier.padding(
+                        top = if (index == 0) 0.dp else ListItemDefaults.SegmentedGap,
+                    ),
                     onClick = {
                         if (selecting) {
                             selectedIndices = if (index in selectedIndices) {

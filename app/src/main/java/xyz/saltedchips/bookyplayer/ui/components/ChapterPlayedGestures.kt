@@ -2,12 +2,15 @@ package xyz.saltedchips.bookyplayer.ui.components
 
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconButtonShapes
+import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -22,7 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SwipeableChapterRow(
     index: Int,
@@ -31,11 +34,13 @@ fun SwipeableChapterRow(
     progress: Float,
     complete: Boolean,
     selected: Boolean,
-    showDivider: Boolean,
+    itemShapes: ListItemShapes,
     revealed: Boolean,
     swipeEnabled: Boolean,
     selecting: Boolean = false,
     checked: Boolean = false,
+    playing: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     onRevealedChange: (Boolean) -> Unit,
@@ -49,18 +54,24 @@ fun SwipeableChapterRow(
         onRevealedChange = onRevealedChange,
         enabled = swipeEnabled && !selecting,
         fromStart = true,
-        shape = RoundedCornerShape(16.dp),
+        shape = itemShapes.shape,
         actionWidth = actionWidth,
         actionCount = 1,
+        modifier = modifier,
+        expandActions = true,
         onCommit = {
             if (complete) onMarkUnplayed() else onMarkPlayed()
         },
-        actions = {
+        actions = { slotWidth ->
             FilledTonalIconButton(
                 onClick = {
                     onRevealedChange(false)
                     if (complete) onMarkUnplayed() else onMarkPlayed()
                 },
+                shapes = IconButtonShapes(
+                    shape = ButtonGroupDefaults.connectedLeadingButtonShape,
+                    pressedShape = ButtonGroupDefaults.connectedLeadingButtonPressShape,
+                ),
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = if (complete) {
                         colors.secondaryContainer
@@ -75,7 +86,7 @@ fun SwipeableChapterRow(
                 ),
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(actionWidth),
+                    .width(slotWidth),
             ) {
                 Icon(
                     if (complete) BookyIcons.restartAlt else BookyIcons.check,
@@ -91,7 +102,8 @@ fun SwipeableChapterRow(
             progress = progress,
             complete = complete,
             selected = selected,
-            showDivider = showDivider,
+            itemShapes = itemShapes,
+            playing = playing,
             selecting = selecting,
             checked = checked,
             onClick = {

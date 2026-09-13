@@ -4,6 +4,9 @@ import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
@@ -31,6 +34,9 @@ data class LibraryUiState(
     val books: List<Audiobook> = emptyList(),
     val playQueue: List<Audiobook> = emptyList(),
     val scanning: Boolean = false,
+    val scanDone: Int = 0,
+    val scanTotal: Int = 0,
+    val scanLabel: String? = null,
     val sort: LibrarySort = LibrarySort.Alphabetical,
 )
 
@@ -44,6 +50,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val lastPlayed = loadLongMap(KEY_LAST_PLAYED)
     private val listened = loadLongMap(KEY_LISTENED)
     private val metadata = loadMetadata()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var scanGeneration = 0
+    private var lastScanPublishMs = 0L
 
     private val _state = MutableStateFlow(
         LibraryUiState(
@@ -105,16 +114,34 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         fileFingerprints = emptyMap()
         treeFingerprint = null
         LibraryCatalogStore.clear(getApplication())
-        _state.value = _state.value.copy(folderUri = uri.toString(), books = emptyList())
+        _state.value = _state.value.copy(
+            folderUri = uri.toString(),
+            books = emptyList(),
+            playQueue = emptyList(),
+            scanning = true,
+            scanDone = 0,
+            scanTotal = 0,
+            scanLabel = null,
+        )
         refreshFolderName(uri)
         scan(force = true)
     }
 
     fun scan(force: Boolean = true) {
         val uri = _state.value.folderUri ?: return
+        val generation = ++scanGeneration
         val showSpinner = force || scanned.isEmpty()
         if (showSpinner) {
-            _state.value = _state.value.copy(scanning = true)
+            _state.value = _state.value.copy(
+                scanning = true,
+                scanDone = 0,
+                scanTotal = 0,
+                scanLabel = null,
+            )
+        } else {
+            _state.update {
+                it.copy(scanning = true, scanDone = 0, scanTotal = 0, scanLabel = null)
+            }
         }
         viewModelScope.launch {
             val tree = Uri.parse(uri)
@@ -139,11 +166,36 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                             val print = snapshotPrints[book.id] ?: return@mapNotNull null
                             book.id to (book to print)
                         }.toMap(),
+                        onProgress = { done, total, title ->
+                            postScanUpdate(generation, force = done == 0 || (total > 0 && done == total)) {
+                                _state.update { state ->
+                                    state.copy(
+                                        scanning = true,
+                                        scanDone = done,
+                                        scanTotal = total,
+                                        scanLabel = title,
+                                    )
+                                }
+                            }
+                        },
+                        onBooks = { books, prints ->
+                            postScanUpdate(generation, force = books.size <= 1) {
+                                scanned = books
+                                fileFingerprints = prints
+                                publishBooks(
+                                    scanning = true,
+                                    scanDone = books.size,
+                                    scanTotal = _state.value.scanTotal.coerceAtLeast(books.size),
+                                    scanLabel = books.lastOrNull()?.title,
+                                )
+                            }
+                        },
                     )
                 } catch (_: SecurityException) {
                     LibraryScanResult("", emptyList(), emptyMap())
                 }
             }
+            if (generation != scanGeneration) return@launch
             scanned = result.books
             fileFingerprints = result.fileFingerprints
             treeFingerprint = result.treeFingerprint.ifBlank { treeFingerprint }
@@ -153,7 +205,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     LibraryCatalog(uri, result.treeFingerprint, result.books, result.fileFingerprints),
                 )
             }
-            publishBooks(scanning = false)
+            publishBooks(
+                scanning = false,
+                scanDone = 0,
+                scanTotal = 0,
+                scanLabel = null,
+            )
+        }
+    }
+
+    private fun postScanUpdate(generation: Int, force: Boolean, block: () -> Unit) {
+        val now = SystemClock.uptimeMillis()
+        if (!force && now - lastScanPublishMs < 100L) return
+        lastScanPublishMs = now
+        mainHandler.post {
+            if (generation != scanGeneration) return@post
+            block()
         }
     }
 
@@ -223,7 +290,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         publishBooks()
     }
 
-    private fun publishBooks(scanning: Boolean = _state.value.scanning) {
+    private fun publishBooks(
+        scanning: Boolean = _state.value.scanning,
+        scanDone: Int = _state.value.scanDone,
+        scanTotal: Int = _state.value.scanTotal,
+        scanLabel: String? = _state.value.scanLabel,
+    ) {
         val decorated = scanned
             .filterNot { it.id in hiddenIds }
             .map { book ->
@@ -251,6 +323,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 books = books,
                 playQueue = books,
                 scanning = scanning,
+                scanDone = scanDone,
+                scanTotal = scanTotal,
+                scanLabel = scanLabel,
             )
         }
     }
@@ -350,6 +425,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val root = JSONObject()
         metadata.forEach { (id, value) -> root.put(id, value) }
         prefs.edit().putString(KEY_METADATA, root.toString()).apply()
+    }
+
+    override fun onCleared() {
+        scanGeneration += 1
+        mainHandler.removeCallbacksAndMessages(null)
+        super.onCleared()
     }
 
     private companion object {

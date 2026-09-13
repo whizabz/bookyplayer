@@ -27,6 +27,7 @@ object BookyIcons {
     val book2: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_book_2)
     val delete: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_delete)
     val edit: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_edit)
+    val warning: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_warning)
     val speed: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_speed)
     val repeat: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_repeat)
 }

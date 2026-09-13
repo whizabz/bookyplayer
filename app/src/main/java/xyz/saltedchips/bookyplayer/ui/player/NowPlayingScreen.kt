@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -50,6 +51,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ButtonGroupScope
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -73,6 +75,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Typography
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -88,6 +91,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -100,15 +104,17 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp as lerpColor
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.lerp as lerpTextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.util.lerp as lerpInt
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -141,6 +147,7 @@ private val MiniTransportGap = 6.dp
 private class ExpandedSlotLock {
     var play by mutableStateOf<Offset?>(null)
     var skip by mutableStateOf<Offset?>(null)
+    var title by mutableStateOf<Offset?>(null)
     var slider by mutableStateOf<Offset?>(null)
     var sliderSize by mutableStateOf<IntSize?>(null)
 }
@@ -268,7 +275,6 @@ fun NowPlayingScreen(
             scope.launch { dismissX.snapTo(dismissX.value + delta) }
         }
         val chromeFade = effectsOutgoing(rawProgress)
-        val miniFade = effectsIncoming(rawProgress)
         val scrimFade = effectsScrim(rawProgress)
         val colorProgress = collapseProgress
         val surfaceWidth = lerp(
@@ -294,7 +300,7 @@ fun NowPlayingScreen(
             state = dragState,
             animationSpec = spatialSpec,
         )
-        val slotsReady = slotLock.play != null && slotLock.skip != null
+        val slotsReady = slotLock.play != null && slotLock.skip != null && slotLock.title != null
         val probeWidth = fullWidthPx.roundToInt()
         val probeHeight = fullHeightPx.roundToInt()
         if (!slotsReady && probeWidth > 0 && probeHeight > 0) {
@@ -312,7 +318,6 @@ fun NowPlayingScreen(
                     player = player,
                     collapseProgress = 0f,
                     chromeFade = 0f,
-                    miniFade = 0f,
                     fullWidthPx = fullWidthPx,
                     fullHeightPx = fullHeightPx,
                     miniWidthPx = miniWidthPx,
@@ -420,7 +425,6 @@ fun NowPlayingScreen(
                 player = player,
                 collapseProgress = collapseProgress,
                 chromeFade = chromeFade,
-                miniFade = miniFade,
                 fullWidthPx = fullWidthPx,
                 fullHeightPx = fullHeightPx,
                 miniWidthPx = miniWidthPx,
@@ -462,7 +466,6 @@ private fun NowPlayingContent(
     player: PlayerUiState,
     collapseProgress: Float,
     chromeFade: Float,
-    miniFade: Float,
     fullWidthPx: Float,
     fullHeightPx: Float,
     miniWidthPx: Float,
@@ -508,6 +511,7 @@ private fun NowPlayingContent(
     var playSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var skipSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var sliderSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var titleSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val chapterDuration = player.chapterDurationMs.toFloat().coerceAtLeast(1f)
     val chapterPosition = player.chapterPositionMs.toFloat().coerceIn(0f, chapterDuration)
     val fadeOut = chromeFade
@@ -531,22 +535,26 @@ private fun NowPlayingContent(
         padExpPx,
         statusPx + with(density) { 48.dp.toPx() },
     )
-    val titleExpandedOffset = Offset(
-        padExpPx,
-        coverExpandedOffset.y + coverExpandedSize + with(density) { 16.dp.toPx() },
-    )
     val measuredPlay = slotOffset(parentCoords, playSlot)
     val measuredSkip = slotOffset(parentCoords, skipSlot)
     val measuredSlider = slotOffset(parentCoords, sliderSlot)
     val measuredSliderSize = sliderSlot?.takeIf { it.isAttached }?.size
+    val measuredTitle = slotOffset(parentCoords, titleSlot)
     SideEffect {
         if (measurementOnly || transportSettled) {
             measuredPlay?.let { slotLock.play = it }
             measuredSkip?.let { slotLock.skip = it }
+            measuredTitle?.let { slotLock.title = it }
             measuredSlider?.let { slotLock.slider = it }
             measuredSliderSize?.let { slotLock.sliderSize = it }
         }
     }
+    val titleExpandedOffset = slotLock.title
+        ?: measuredTitle.takeIf { transportSettled }
+        ?: Offset(
+            padExpPx,
+            coverExpandedOffset.y + coverExpandedSize + with(density) { 16.dp.toPx() },
+        )
     val playExpandedOffset = slotLock.play
         ?: measuredPlay.takeIf { transportSettled }
         ?: Offset(
@@ -602,11 +610,7 @@ private fun NowPlayingContent(
     )
     val coverOffset = lerpOffset(coverExpandedOffset, coverCollapsedOffset, collapseProgress)
     val titleOffset = lerpOffset(titleExpandedOffset, titleCollapsedOffset, collapseProgress)
-    val titleWidth = lerp(
-        with(density) { (fullWidthPx - padExpPx * 2f).toDp() },
-        MiniTitleWidth,
-        collapseProgress,
-    )
+    val expandedTitleWidth = with(density) { (fullWidthPx - padExpPx * 2f).toDp() }
     val coverCorner = lerp(16.dp, MiniCoverSize / 2f, collapseProgress)
     val sliderExpandedSize = slotLock.sliderSize
         ?: measuredSliderSize.takeIf { transportSettled }
@@ -673,7 +677,8 @@ private fun NowPlayingContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 56.dp),
+                    .heightIn(min = 56.dp)
+                    .onGloballyPositioned { titleSlot = it },
             )
             Spacer(Modifier.height(12.dp))
             val chapterCount = book.chapterTitles.size.coerceAtLeast(1)
@@ -972,10 +977,16 @@ private fun NowPlayingContent(
             square = false,
             shape = RoundedCornerShape(coverCorner),
         )
-        Column(
+        MorphingNowPlayingTitle(
+            title = book.title,
+            author = book.author,
+            chapterTitle = book.currentChapterTitle,
+            collapseProgress = collapseProgress,
+            expandedWidth = expandedTitleWidth,
+            typography = typography,
+            colors = colors,
             modifier = Modifier
                 .offset { titleOffset.round() }
-                .width(titleWidth)
                 .then(
                     if (collapseProgress > 0.55f) {
                         Modifier.clickable(onClick = onExpand)
@@ -983,40 +994,7 @@ private fun NowPlayingContent(
                         Modifier
                     },
                 ),
-        ) {
-            Text(
-                text = book.title,
-                style = lerpTextStyle(
-                    typography.titleLarge,
-                    typography.bodyLarge,
-                    collapseProgress,
-                ),
-                textAlign = if (collapseProgress < 0.45f) TextAlign.Center else TextAlign.Start,
-                maxLines = if (collapseProgress < 0.45f) 2 else 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Box(Modifier.fillMaxWidth()) {
-                Text(
-                    text = "by ${book.author}",
-                    style = typography.titleMedium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { alpha = 1f - chromeFade },
-                )
-                Text(
-                    text = book.currentChapterTitle,
-                    style = typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.graphicsLayer { alpha = miniFade },
-                )
-            }
-        }
+        )
         if (showTransportOverlay) {
             CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                 FilledTonalIconButton(
@@ -1165,6 +1143,7 @@ private fun NowPlayingContent(
                 chapterStartMs = book.chapterStartMs,
                 bookPositionMs = player.bookPositionMs,
                 currentIndex = player.currentChapterIndex,
+                isPlaying = player.isPlaying,
                 positionsMs = player.chapterPositionsMs,
                 completedChapters = player.completedChapters,
                 onSelect = onSeekChapter,
@@ -1452,15 +1431,90 @@ private fun effectsOutgoing(raw: Float): Float {
     return ((t - 0.06f) / 0.34f).coerceIn(0f, 1f)
 }
 
-/** Mini-player details arrive after the spatial morph is underway. */
-private fun effectsIncoming(raw: Float): Float {
-    val t = raw.coerceIn(0f, 1f)
-    return ((t - 0.4f) / 0.4f).coerceIn(0f, 1f)
-}
-
 private fun effectsScrim(raw: Float): Float {
     val t = raw.coerceIn(0f, 1f)
     return 1f - (t / 0.8f).coerceIn(0f, 1f)
+}
+
+@Composable
+private fun MorphingNowPlayingTitle(
+    title: String,
+    author: String,
+    chapterTitle: String,
+    collapseProgress: Float,
+    expandedWidth: Dp,
+    typography: Typography,
+    colors: ColorScheme,
+    modifier: Modifier = Modifier,
+) {
+    val expandedAlpha = 1f - collapseProgress
+    val miniAlpha = collapseProgress
+    Layout(
+        modifier = modifier.clipToBounds(),
+        content = {
+            Column(
+                modifier = Modifier
+                    .width(expandedWidth)
+                    .graphicsLayer { alpha = expandedAlpha },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = title,
+                    style = typography.titleLarge,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = "by $author",
+                    style = typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .width(MiniTitleWidth)
+                    .graphicsLayer { alpha = miniAlpha },
+            ) {
+                Text(
+                    text = title,
+                    style = typography.bodyLarge,
+                    textAlign = TextAlign.Start,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = chapterTitle,
+                    style = typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+    ) { measurables, _ ->
+        val expandedPlaceable = measurables[0].measure(Constraints())
+        val miniPlaceable = measurables[1].measure(Constraints())
+        val width = lerpInt(
+            expandedPlaceable.width,
+            miniPlaceable.width,
+            collapseProgress,
+        )
+        val height = lerpInt(
+            expandedPlaceable.height,
+            miniPlaceable.height,
+            collapseProgress,
+        )
+        layout(width, height) {
+            expandedPlaceable.place(0, 0)
+            miniPlaceable.place(0, 0)
+        }
+    }
 }
 
 private fun slotOffset(parent: LayoutCoordinates?, slot: LayoutCoordinates?): Offset? {
@@ -1724,7 +1778,7 @@ private fun SleepStepper(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ChapterListSheet(
     titles: List<String>,
@@ -1732,6 +1786,7 @@ private fun ChapterListSheet(
     chapterStartMs: List<Long>,
     bookPositionMs: Long,
     currentIndex: Int,
+    isPlaying: Boolean,
     positionsMs: Map<Int, Long>,
     completedChapters: Set<Int>,
     onSelect: (Int) -> Unit,
@@ -1789,7 +1844,11 @@ private fun ChapterListSheet(
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
-                LazyColumn(state = listState) {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+                ) {
                     itemsIndexed(titles) { index, title ->
                         val selected = index == currentIndex
                         val duration = durationsMs.getOrNull(index) ?: 0L
@@ -1813,9 +1872,13 @@ private fun ChapterListSheet(
                             progress = progress,
                             complete = complete,
                             selected = selected,
-                            showDivider = index > 0 && !selected && currentIndex != index - 1,
+                            itemShapes = ListItemDefaults.segmentedShapes(
+                                index = index,
+                                count = titles.size,
+                            ),
                             revealed = revealedIndex == index,
                             swipeEnabled = true,
+                            playing = selected && isPlaying,
                             onClick = {
                                 onSelect(index)
                                 onDismiss()

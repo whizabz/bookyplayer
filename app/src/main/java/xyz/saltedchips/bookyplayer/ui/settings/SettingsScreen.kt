@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,9 +35,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import xyz.saltedchips.bookyplayer.BuildConfig
 import xyz.saltedchips.bookyplayer.R
 import xyz.saltedchips.bookyplayer.settings.AppearanceMode
 import xyz.saltedchips.bookyplayer.settings.ColorTheme
@@ -58,6 +62,8 @@ fun SettingsScreen(
     onSmartResumeSecondsChange: (Int) -> Unit = {},
     folderPath: String? = null,
     onChooseFolder: () -> Unit = {},
+    playbackNotificationsEnabled: Boolean? = null,
+    onPlaybackNotificationsClick: () -> Unit = {},
     onOpenPlaceholderCover: () -> Unit = {},
     onBack: () -> Unit = {},
     bottomContentPadding: Dp = 16.dp,
@@ -98,6 +104,40 @@ fun SettingsScreen(
                 .padding(top = 8.dp, bottom = bottomContentPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (playbackNotificationsEnabled == false) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(bottom = 16.dp)) {
+                        ListItem(
+                            headlineContent = { Text("Stay in control while you listen") },
+                            supportingContent = {
+                                Text(
+                                    "Booky Player shows a playback notification so you can pause, skip, " +
+                                        "and see the current book from the lock screen and notification shade " +
+                                        "when you leave the app. It is not used for ads or other alerts.",
+                                )
+                            },
+                            leadingContent = {
+                                Icon(
+                                    BookyIcons.warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                        Button(
+                            onClick = onPlaybackNotificationsClick,
+                            shapes = ButtonDefaults.shapes(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                        ) {
+                            Text("Tap to allow")
+                        }
+                    }
+                }
+            }
+
             Card(modifier = Modifier.fillMaxWidth()) {
                 ListItem(
                     headlineContent = { Text("Audiobook folder") },
@@ -271,10 +311,13 @@ fun SettingsScreen(
             }
 
             Text(
-                "${stringResource(R.string.app_name)} 0.1.0 · Android",
+                "${stringResource(R.string.app_name)} ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 16.dp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
             )
         }
     }

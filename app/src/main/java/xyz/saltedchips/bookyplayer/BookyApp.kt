@@ -1,6 +1,7 @@
 package xyz.saltedchips.bookyplayer
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,9 +12,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -23,7 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import xyz.saltedchips.bookyplayer.library.LibraryViewModel
@@ -51,17 +60,60 @@ fun BookyApp(
     val appearance by appearanceViewModel.mode.collectAsStateWithLifecycle()
     val colorTheme by appearanceViewModel.colorTheme.collectAsStateWithLifecycle()
     val placeholderCover by appearanceViewModel.placeholderCover.collectAsStateWithLifecycle()
+    val notificationsPrompted by appearanceViewModel.notificationsPrompted.collectAsStateWithLifecycle()
     val library by libraryViewModel.state.collectAsStateWithLifecycle()
     val player by playerViewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var notificationsEnabled by remember {
+        mutableStateOf(playbackNotificationsGranted(context))
+    }
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsEnabled = playbackNotificationsGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    var pendingPlay by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showNotificationExplainer by rememberSaveable { mutableStateOf(false) }
     val pickFolder = rememberLauncherForActivityResult(PersistableOpenDocumentTree()) { uri ->
         if (uri != null) libraryViewModel.setFolder(uri)
     }
     val notifyPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33) {
+    ) {
+        notificationsEnabled = playbackNotificationsGranted(context)
+        pendingPlay?.invoke()
+        pendingPlay = null
+    }
+    fun needsNotificationExplainer(): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return false
+        if (notificationsPrompted) return false
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        return !granted
+    }
+    fun withPlaybackReady(action: () -> Unit) {
+        if (needsNotificationExplainer()) {
+            pendingPlay = action
+            showNotificationExplainer = true
+        } else {
+            action()
+        }
+    }
+    fun finishNotificationExplainer(requestPermission: Boolean) {
+        appearanceViewModel.setNotificationsPrompted(true)
+        showNotificationExplainer = false
+        if (requestPermission && Build.VERSION.SDK_INT >= 33) {
             notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            pendingPlay?.invoke()
+            pendingPlay = null
         }
     }
     LaunchedEffect(library.playQueue.map { it.id }) {
@@ -117,10 +169,16 @@ fun BookyApp(
                 0.dp
             }
         val playBook: (Audiobook) -> Unit = { book ->
-            if (player.book?.id == book.id) {
+            if (player.book?.id == book.id && player.isPlaying) {
                 playerViewModel.togglePlay()
             } else {
-                playerViewModel.selectBook(book, play = true)
+                withPlaybackReady {
+                    if (player.book?.id == book.id) {
+                        playerViewModel.togglePlay()
+                    } else {
+                        playerViewModel.selectBook(book, play = true)
+                    }
+                }
             }
         }
         LaunchedEffect(detailBookId, library.books) {
@@ -189,6 +247,18 @@ fun BookyApp(
                             onSmartResumeSecondsChange = playerViewModel::setSmartResumeSeconds,
                             folderPath = library.folderPath,
                             onChooseFolder = { pickFolder.launch(null) },
+                            playbackNotificationsEnabled = if (Build.VERSION.SDK_INT >= 33) {
+                                notificationsEnabled
+                            } else {
+                                null
+                            },
+                            onPlaybackNotificationsClick = {
+                                if (Build.VERSION.SDK_INT >= 33 &&
+                                    !playbackNotificationsGranted(context)
+                                ) {
+                                    notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
                             onOpenPlaceholderCover = { showingPlaceholderCover = true },
                             onBack = {
                                 showingPlaceholderCover = false
@@ -209,7 +279,9 @@ fun BookyApp(
                                     completedChapters = playerViewModel.peekCompletedChapters(book),
                                     onPlay = { playBook(book) },
                                     onPlayChapter = { index ->
-                                        playerViewModel.playFromChapter(book, index)
+                                        withPlaybackReady {
+                                            playerViewModel.playFromChapter(book, index)
+                                        }
                                     },
                                     onSetChaptersPlayed = { indices, played ->
                                         playerViewModel.setChaptersPlayed(book.id, indices, played)
@@ -264,6 +336,9 @@ fun BookyApp(
                             hasFolder = library.folderUri != null,
                             folderName = library.folderName,
                             scanning = library.scanning,
+                            scanDone = library.scanDone,
+                            scanTotal = library.scanTotal,
+                            scanLabel = library.scanLabel,
                             sort = library.sort,
                             onSortChange = libraryViewModel::setSort,
                             onMarkPlayed = { books ->
@@ -311,7 +386,13 @@ fun BookyApp(
                     player = player,
                     expanded = nowPlaying,
                     onExpandedChange = { nowPlaying = it },
-                    onTogglePlay = playerViewModel::togglePlay,
+                    onTogglePlay = {
+                        if (player.isPlaying) {
+                            playerViewModel.togglePlay()
+                        } else {
+                            withPlaybackReady { playerViewModel.togglePlay() }
+                        }
+                    },
                     onSkip = playerViewModel::skip,
                     onSeek = playerViewModel::seek,
                     onSeekChapter = playerViewModel::seekToChapter,
@@ -341,6 +422,30 @@ fun BookyApp(
                 )
             }
         }
+        if (showNotificationExplainer) {
+            AlertDialog(
+                onDismissRequest = { finishNotificationExplainer(requestPermission = false) },
+                title = { Text("Stay in control while you listen") },
+                text = {
+                    Text(
+                        "Booky Player shows a playback notification so you can pause, skip, " +
+                            "and see the current book from the lock screen and notification shade " +
+                            "when you leave the app. It is not used for ads or other alerts. " +
+                            "You can still play books in the app if you skip this.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { finishNotificationExplainer(requestPermission = true) }) {
+                        Text("Continue")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { finishNotificationExplainer(requestPermission = false) }) {
+                        Text("Not now")
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -349,4 +454,12 @@ private enum class AppRoute(val rank: Int) {
     Details(1),
     Settings(2),
     Placeholder(3),
+}
+
+private fun playbackNotificationsGranted(context: android.content.Context): Boolean {
+    if (Build.VERSION.SDK_INT < 33) return true
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+    ) == PackageManager.PERMISSION_GRANTED
 }

@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +31,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private enum class RevealValue { Closed, Open, Commit }
@@ -39,13 +42,14 @@ fun SwipeToRevealActions(
     revealed: Boolean,
     onRevealedChange: (Boolean) -> Unit,
     enabled: Boolean,
-    actions: @Composable RowScope.() -> Unit,
+    actions: @Composable RowScope.(Dp) -> Unit,
     modifier: Modifier = Modifier,
     shape: Shape = RectangleShape,
     actionWidth: Dp = 56.dp,
     actionCount: Int = 3,
     fromStart: Boolean = false,
     onCommit: (() -> Unit)? = null,
+    expandActions: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val density = LocalDensity.current
@@ -80,48 +84,57 @@ fun SwipeToRevealActions(
     }
     LaunchedEffect(revealed) {
         val target = if (revealed) RevealValue.Open else RevealValue.Closed
-        if (state.currentValue != target && state.currentValue != RevealValue.Commit) {
+        if (state.settledValue != target && state.settledValue != RevealValue.Commit) {
             state.animateTo(target)
         }
     }
-    LaunchedEffect(state.currentValue) {
-        when (state.currentValue) {
+    LaunchedEffect(state.settledValue) {
+        when (state.settledValue) {
             RevealValue.Closed -> if (revealed) onRevealedChange(false)
             RevealValue.Open -> if (!revealed) onRevealedChange(true)
             RevealValue.Commit -> {
-                state.snapTo(RevealValue.Closed)
                 onRevealedChange(false)
                 onCommit?.invoke()
+                state.snapTo(RevealValue.Closed)
             }
         }
     }
+    val offsetPx = runCatching { state.requireOffset() }.getOrDefault(0f)
+    val actionSlotPx = if (expandActions) {
+        abs(offsetPx).coerceAtLeast(revealPx)
+    } else {
+        revealPx
+    }
+    val actionSlotWidth = with(density) { actionSlotPx.toDp() }
     Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape),
     ) {
-        Row(
-            modifier = Modifier.matchParentSize(),
-            horizontalArrangement = Arrangement.spacedBy(
-                gap,
-                if (fromStart) Alignment.Start else Alignment.End,
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-            content = actions,
-        )
         Box(
             modifier = Modifier
-                .offset {
-                    val x = runCatching { state.requireOffset() }.getOrDefault(0f)
-                    IntOffset(x.roundToInt(), 0)
-                }
+                .matchParentSize(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .align(if (fromStart) Alignment.CenterStart else Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(actionSlotWidth),
+                horizontalArrangement = Arrangement.spacedBy(gap),
+                verticalAlignment = Alignment.CenterVertically,
+                content = { actions(actionSlotWidth) },
+            )
+        }
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(offsetPx.roundToInt(), 0) }
                 .anchoredDraggable(
                     state = state,
                     orientation = Orientation.Horizontal,
                     enabled = enabled,
                 )
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background),
+                .background(MaterialTheme.colorScheme.surfaceContainer),
             content = content,
         )
     }

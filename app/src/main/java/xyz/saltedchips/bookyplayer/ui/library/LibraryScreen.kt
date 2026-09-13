@@ -48,7 +48,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ListItemShapes
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
@@ -91,6 +90,9 @@ fun LibraryScreen(
     hasFolder: Boolean = false,
     folderName: String? = null,
     scanning: Boolean = false,
+    scanDone: Int = 0,
+    scanTotal: Int = 0,
+    scanLabel: String? = null,
     sort: LibrarySort = LibrarySort.Alphabetical,
     onSortChange: (LibrarySort) -> Unit = {},
     onMarkPlayed: (List<Audiobook>) -> Unit = {},
@@ -254,22 +256,16 @@ fun LibraryScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(innerPadding)
+                    .padding(horizontal = 32.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    LoadingIndicator()
-                    Text(
-                        text = if (folderName != null) {
-                            "Scanning $folderName"
-                        } else {
-                            "Scanning library"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 16.dp),
-                    )
-                }
+                LibraryScanProgress(
+                    folderName = folderName,
+                    scanDone = scanDone,
+                    scanTotal = scanTotal,
+                    scanLabel = scanLabel,
+                )
             }
         } else {
             LazyColumn(
@@ -284,12 +280,14 @@ fun LibraryScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
             ) {
-                if (scanning && books.isNotEmpty()) {
+                if (scanning) {
                     item("scanning") {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                        LibraryScanProgress(
+                            folderName = folderName,
+                            scanDone = scanDone,
+                            scanTotal = scanTotal,
+                            scanLabel = scanLabel,
+                            modifier = Modifier.padding(vertical = 8.dp),
                         )
                     }
                 }
@@ -427,7 +425,7 @@ private fun LibraryBookRow(
         shape = itemShapes.shape,
         actionWidth = actionWidth,
         actionCount = 2,
-        actions = {
+        actions = { _ ->
             FilledTonalIconButton(
                 onClick = {
                     onRevealedChange(false)
@@ -599,6 +597,58 @@ private fun LibraryRow(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LibraryScanProgress(
+    folderName: String?,
+    scanDone: Int,
+    scanTotal: Int,
+    scanLabel: String?,
+    modifier: Modifier = Modifier,
+) {
+    val discovering = scanTotal <= 0
+    val fraction = if (scanTotal <= 0) {
+        0f
+    } else {
+        (scanDone.toFloat() / scanTotal.toFloat()).coerceIn(0f, 1f)
+    }
+    val headline = when {
+        discovering -> if (folderName != null) {
+            "Looking through $folderName"
+        } else {
+            "Looking through your folder"
+        }
+        else -> "$scanDone of $scanTotal"
+    }
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        LinearProgressIndicator(
+            progress = { fraction },
+            modifier = Modifier.fillMaxWidth(),
+            strokeCap = StrokeCap.Round,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
+        Text(
+            text = headline,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        if (!scanLabel.isNullOrBlank() && !discovering) {
+            Text(
+                text = scanLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }

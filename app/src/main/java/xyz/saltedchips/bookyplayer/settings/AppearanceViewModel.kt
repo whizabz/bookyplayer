@@ -34,6 +34,11 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
     private val _placeholderCover = MutableStateFlow(loadPlaceholderCover())
     val placeholderCover: StateFlow<PlaceholderCoverStyle> = _placeholderCover
 
+    private val _notificationsPrompted = MutableStateFlow(
+        prefs.getBoolean(KEY_NOTIFICATIONS_PROMPTED, false),
+    )
+    val notificationsPrompted: StateFlow<Boolean> = _notificationsPrompted
+
     init {
         prefs.edit()
             .remove(KEY_FONT)
@@ -65,6 +70,11 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         _placeholderCover.value = next
     }
 
+    fun setNotificationsPrompted(prompted: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFICATIONS_PROMPTED, prompted).apply()
+        _notificationsPrompted.value = prompted
+    }
+
     private fun loadPlaceholderCover(): PlaceholderCoverStyle {
         val stored = prefs.getString(KEY_PLACEHOLDER_FONT, null)
         val font = when (stored) {
@@ -91,5 +101,6 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         const val KEY_PLACEHOLDER_OPSZ = "placeholder_cover_opsz"
         const val KEY_PLACEHOLDER_SOFT = "placeholder_cover_soft"
         const val KEY_PLACEHOLDER_WONK = "placeholder_cover_wonk"
+        const val KEY_NOTIFICATIONS_PROMPTED = "notifications_prompted"
     }
 }

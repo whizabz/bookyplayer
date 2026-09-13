@@ -16,95 +16,111 @@ class LibraryScanner(private val context: Context) {
     fun treeFingerprint(treeUri: Uri): String {
         val root = DocumentFile.fromTreeUri(context, treeUri) ?: return ""
         val parts = mutableListOf<String>()
-        collectFingerprint(root, parts)
+        discover(root, libraryRoot = true, authorHint = null, pending = mutableListOf(), parts = parts)
         return parts.joinToString("\n")
     }
 
     fun scan(
         treeUri: Uri,
         cache: Map<String, Pair<Audiobook, String>> = emptyMap(),
+        onProgress: (done: Int, total: Int, title: String?) -> Unit = { _, _, _ -> },
+        onBooks: (List<Audiobook>, Map<String, String>) -> Unit = { _, _ -> },
     ): LibraryScanResult {
-        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return LibraryScanResult("", emptyList(), emptyMap())
-        val books = mutableListOf<Audiobook>()
-        val fingerprints = mutableMapOf<String, String>()
+        val root = DocumentFile.fromTreeUri(context, treeUri)
+            ?: return LibraryScanResult("", emptyList(), emptyMap())
+        val pending = mutableListOf<PendingBook>()
         val parts = mutableListOf<String>()
-        collect(
+        onProgress(0, 0, null)
+        discover(
             dir = root,
             libraryRoot = true,
             authorHint = null,
-            books = books,
-            fingerprints = fingerprints,
-            cache = cache,
+            pending = pending,
+            parts = parts,
         )
-        collectFingerprint(root, parts)
+        val total = pending.size
+        onProgress(0, total, null)
+        val books = mutableListOf<Audiobook>()
+        val fingerprints = mutableMapOf<String, String>()
+        pending.forEachIndexed { index, item ->
+            addBook(
+                id = item.id,
+                title = item.title,
+                author = item.author,
+                media = item.media,
+                coverUri = item.coverUri,
+                books = books,
+                fingerprints = fingerprints,
+                cache = cache,
+            )
+            val done = index + 1
+            onProgress(done, total, item.title)
+            onBooks(books.toList(), fingerprints.toMap())
+        }
         return LibraryScanResult(parts.joinToString("\n"), books, fingerprints)
     }
 
-    private fun collectFingerprint(dir: DocumentFile, parts: MutableList<String>) {
-        parts += "d|${dir.uri}|${dir.name.orEmpty()}|${dir.lastModified()}"
-        val children = dir.listFiles()
-        children.filter { it.isFile }.sortedBy { it.uri.toString() }.forEach { file ->
-            parts += "f|${file.uri}|${file.name.orEmpty()}|${file.lastModified()}|${file.length()}"
-        }
-        children.filter { it.isDirectory }.sortedBy { it.uri.toString() }.forEach { child ->
-            collectFingerprint(child, parts)
-        }
-    }
+    private data class PendingBook(
+        val id: String,
+        val title: String,
+        val author: String,
+        val media: List<DocumentFile>,
+        val coverUri: String?,
+    )
 
-    private fun collect(
+    private fun discover(
         dir: DocumentFile,
         libraryRoot: Boolean,
         authorHint: String?,
-        books: MutableList<Audiobook>,
-        fingerprints: MutableMap<String, String>,
-        cache: Map<String, Pair<Audiobook, String>>,
+        pending: MutableList<PendingBook>,
+        parts: MutableList<String>,
     ) {
+        parts += "d|${dir.uri}|${dir.name.orEmpty()}|${dir.lastModified()}"
         val children = dir.listFiles()
         val files = children.filter { it.isFile }
         val dirs = children.filter { it.isDirectory }
+        files.sortedBy { it.uri.toString() }.forEach { file ->
+            parts += "f|${file.uri}|${file.name.orEmpty()}|${file.lastModified()}|${file.length()}"
+        }
         val media = files.filter { child ->
             val name = child.name ?: return@filter false
             MediaKinds.isMedia(name)
         }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name ?: "" })
 
         if (!libraryRoot && media.isNotEmpty()) {
-            addBook(
+            pending += PendingBook(
                 id = dir.uri.toString(),
                 title = dir.name ?: MediaKinds.stem(media.first().name ?: "Audiobook"),
                 author = authorHint?.takeIf { it.isNotBlank() } ?: "Unknown",
                 media = media,
                 coverUri = findCover(files)?.uri?.toString(),
-                books = books,
-                fingerprints = fingerprints,
-                cache = cache,
             )
+            dirs.sortedBy { it.uri.toString() }.forEach { child ->
+                parts += "d|${child.uri}|${child.name.orEmpty()}|${child.lastModified()}"
+            }
             return
         }
 
         if (libraryRoot) {
             for (file in media) {
-                addBook(
+                pending += PendingBook(
                     id = file.uri.toString(),
                     title = MediaKinds.stem(file.name ?: "Audiobook"),
                     author = "Unknown",
                     media = listOf(file),
                     coverUri = null,
-                    books = books,
-                    fingerprints = fingerprints,
-                    cache = cache,
                 )
             }
         }
 
         val nestedHint = if (libraryRoot) null else (dir.name ?: authorHint)
-        for (child in dirs) {
-            collect(
+        for (child in dirs.sortedBy { it.uri.toString() }) {
+            discover(
                 dir = child,
                 libraryRoot = false,
                 authorHint = nestedHint,
-                books = books,
-                fingerprints = fingerprints,
-                cache = cache,
+                pending = pending,
+                parts = parts,
             )
         }
     }
