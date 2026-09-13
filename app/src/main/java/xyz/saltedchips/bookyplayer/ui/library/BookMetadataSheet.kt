@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.data.formatDuration
+import xyz.saltedchips.bookyplayer.data.sourceLabel
 import xyz.saltedchips.bookyplayer.library.CoverImages
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
 import kotlinx.coroutines.Dispatchers
@@ -133,7 +134,7 @@ fun BookMetadataSheet(
                 }
                 Column(Modifier.padding(start = 16.dp)) {
                     Text(
-                        book.fileName,
+                        book.sourceLabel(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -261,10 +261,9 @@ fun LibraryScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 LibraryScanProgress(
-                    folderName = folderName,
+                    refreshing = false,
                     scanDone = scanDone,
                     scanTotal = scanTotal,
-                    scanLabel = scanLabel,
                 )
             }
         } else {
@@ -283,10 +282,9 @@ fun LibraryScreen(
                 if (scanning) {
                     item("scanning") {
                         LibraryScanProgress(
-                            folderName = folderName,
+                            refreshing = true,
                             scanDone = scanDone,
                             scanTotal = scanTotal,
-                            scanLabel = scanLabel,
                             modifier = Modifier.padding(vertical = 8.dp),
                         )
                     }
@@ -603,25 +601,20 @@ private fun LibraryRow(
 
 @Composable
 private fun LibraryScanProgress(
-    folderName: String?,
+    refreshing: Boolean,
     scanDone: Int,
     scanTotal: Int,
-    scanLabel: String?,
     modifier: Modifier = Modifier,
 ) {
-    val discovering = scanTotal <= 0
     val fraction = if (scanTotal <= 0) {
         0f
     } else {
         (scanDone.toFloat() / scanTotal.toFloat()).coerceIn(0f, 1f)
     }
-    val headline = when {
-        discovering -> if (folderName != null) {
-            "Looking through $folderName"
-        } else {
-            "Looking through your folder"
-        }
-        else -> "$scanDone of $scanTotal"
+    val headline = if (refreshing) {
+        "Scanning for changes"
+    } else {
+        "Scanning for new books"
     }
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -640,15 +633,5 @@ private fun LibraryScanProgress(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 16.dp),
         )
-        if (!scanLabel.isNullOrBlank() && !discovering) {
-            Text(
-                text = scanLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
     }
 }

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.data.formatDuration
+import xyz.saltedchips.bookyplayer.data.sourceLabel
 import xyz.saltedchips.bookyplayer.player.ChapterMarksSnapshot
 import xyz.saltedchips.bookyplayer.player.PlayerUiState
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
@@ -291,17 +292,13 @@ fun BookDetailScreen(
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
-                    if (book.fileName.isNotBlank()) {
-                        Text(
-                            text = book.fileName,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
+                    Text(
+                        text = book.sourceLabel(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                     Text(
                         text = formatDuration(book.durationMs),
                         style = MaterialTheme.typography.bodyMedium,

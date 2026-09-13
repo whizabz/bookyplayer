@@ -63,9 +63,11 @@ sealed interface SleepTimer {
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("booky_prefs", 0)
+    private val autoLibrary = AutoLibrary(application)
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<PlayerUiState> = _state
 
+    private var libraryBooks: List<Audiobook> = emptyList()
     private var controller: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var positionJob: Job? = null
@@ -170,6 +172,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun bindLibrary(books: List<Audiobook>) {
+        libraryBooks = books
+        val playerHasQueue = (controller?.mediaItemCount ?: 0) > 0
+        val playerBook = bookFromPlayer()
+        if (playerHasQueue && playerBook != null) {
+            val current = _state.value.book
+            if (current?.id == playerBook.id) {
+                _state.update { it.copy(book = playerBook.withChapter(current)) }
+            } else {
+                adoptBook(playerBook, resetPlayer = false)
+            }
+            return
+        }
         val current = _state.value.book
         if (current != null) {
             val match = books.find { it.id == current.id } ?: return
@@ -515,13 +529,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         player.addListener(listener)
         val shouldPlay = playWhenReadyAfterConnect
         playWhenReadyAfterConnect = false
-        if (_state.value.book != null) {
+        if (player.mediaItemCount > 0) {
+            publishFromPlayer()
+            if (shouldPlay && !player.isPlaying) player.play()
+        } else if (_state.value.book != null) {
             loadCurrentBook(
                 playWhenReady = shouldPlay,
                 resetPosition = !isBookLoaded(_state.value.book!!),
             )
+            publishFromPlayer()
         }
-        publishFromPlayer()
     }
 
     private fun loadCurrentBook(playWhenReady: Boolean, resetPosition: Boolean) {
@@ -566,8 +583,52 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun bookFromPlayer(): Audiobook? {
+        val mediaId = controller?.currentMediaItem?.mediaId ?: return null
+        val bookId = AutoLibrary.bookIdFromMediaId(mediaId) ?: return null
+        return libraryBooks.find { it.id == bookId } ?: autoLibrary.bookById(bookId)
+    }
+
+    private fun adoptBook(book: Audiobook, resetPlayer: Boolean) {
+        val player = controller
+        val index = player?.currentMediaItemIndex?.coerceAtLeast(0) ?: 0
+        val bookDuration = player?.bookDurationMs(book.durationMs.coerceAtLeast(1L))
+            ?: book.durationMs.coerceAtLeast(1L)
+        val bookPosition = player?.bookPositionMs()?.coerceIn(0L, bookDuration)
+            ?: book.listenedMs.coerceIn(0L, bookDuration)
+        val chapterDuration = player?.currentChapterDurationMs(
+            book.chapterDurationsMs.getOrNull(index)?.coerceAtLeast(1L) ?: 1L,
+        ) ?: book.chapterDurationsMs.getOrNull(index)?.coerceAtLeast(1L) ?: 1L
+        val chapterPosition = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        loadChapterProgress(book.id)
+        loadCompletedChapters(book, bookPosition)
+        _state.update {
+            it.copy(
+                book = book.copy(
+                    currentChapter = index + 1,
+                    currentChapterTitle = book.chapterTitles.getOrNull(index) ?: book.currentChapterTitle,
+                ),
+                isPlaying = player?.isPlaying == true,
+                chapterPositionMs = chapterPosition,
+                chapterDurationMs = chapterDuration,
+                bookPositionMs = bookPosition,
+                bookDurationMs = bookDuration,
+                currentChapterIndex = index,
+                finished = bookDuration > 1L && bookPosition >= bookDuration,
+            )
+        }
+        if (resetPlayer) {
+            loadCurrentBook(playWhenReady = player?.isPlaying == true, resetPosition = true)
+        }
+    }
+
     private fun publishFromPlayer(throttlePersist: Boolean = false) {
         val player = controller ?: return
+        val playingId = AutoLibrary.bookIdFromMediaId(player.currentMediaItem?.mediaId.orEmpty())
+        if (playingId != null && _state.value.book?.id != playingId) {
+            val incoming = libraryBooks.find { it.id == playingId } ?: autoLibrary.bookById(playingId)
+            if (incoming != null) adoptBook(incoming, resetPlayer = false)
+        }
         val book = _state.value.book ?: return
         val index = player.currentMediaItemIndex.coerceAtLeast(0)
         val chapterTitle = book.chapterTitles.getOrNull(index) ?: book.currentChapterTitle

@@ -1,3 +1,10 @@
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="widget_preview_surface">#F4EEE6</color>
+    <color name="widget_preview_outline">#33000000</color>
+    <color name="widget_preview_cover">#8B3A48</color>
+    <color name="widget_preview_on_cover">#E8C9C4</color>
+    <color name="widget_preview_play">#2A1018</color>
+    <color name="widget_preview_title">#1C140F</color>
+    <color name="widget_preview_author">#6B5A52</color>
 </resources>

@@ -25,6 +25,16 @@ data class Audiobook(
     val lastPlayedMs: Long = 0L,
 )
 
+fun Audiobook.sourceLabel(): String {
+    val files = fileCount.takeIf { it > 0 } ?: mediaUris.size.coerceAtLeast(1)
+    val chapters = chapterCount.takeIf { it > 0 }
+        ?: chapterTitles.size.takeIf { it > 0 }
+        ?: 1
+    val filePart = if (files == 1) "1 file" else "$files files"
+    val chapterPart = if (chapters == 1) "1 chapter" else "$chapters chapters"
+    return "$filePart · $chapterPart"
+}
+
 fun formatDuration(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
     val hours = totalSeconds / 3600

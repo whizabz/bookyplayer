@@ -2,19 +2,86 @@ package xyz.saltedchips.bookyplayer.player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import xyz.saltedchips.bookyplayer.MainActivity
+import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_BACK
+import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_FORWARD
+import xyz.saltedchips.bookyplayer.ui.widget.captureNowPlaying
+import xyz.saltedchips.bookyplayer.ui.widget.refreshNowPlayingWidgets
 
-class PlaybackService : MediaSessionService() {
-    private var session: MediaSession? = null
+class PlaybackService : MediaLibraryService() {
+    private var session: MediaLibrarySession? = null
+    private var player: SkipAwarePlayer? = null
+    private var exoPlayer: ExoPlayer? = null
+    private lateinit var library: AutoLibrary
+    private val handler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var lastWidgetUpdateAt = 0L
+
+    private val persistWhilePlaying = object : Runnable {
+        override fun run() {
+            persistProgress()
+            handler.postDelayed(this, PERSIST_INTERVAL_MS)
+        }
+    }
+
+    private val skipPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        val skipPlayer = player ?: return@OnSharedPreferenceChangeListener
+        when (key) {
+            KEY_SKIP_BACK -> skipPlayer.backIncrementMs = library.skipBackMs()
+            KEY_SKIP_FORWARD -> skipPlayer.forwardIncrementMs = library.skipForwardMs()
+        }
+    }
+
+    private val persistListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            val important = events.containsAny(
+                Player.EVENT_IS_PLAYING_CHANGED,
+                Player.EVENT_MEDIA_ITEM_TRANSITION,
+                Player.EVENT_MEDIA_METADATA_CHANGED,
+                Player.EVENT_PLAYBACK_STATE_CHANGED,
+            )
+            if (important) scheduleWidgetUpdate(player)
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            persistProgress()
+            handler.removeCallbacks(persistWhilePlaying)
+            if (isPlaying) {
+                handler.postDelayed(persistWhilePlaying, PERSIST_INTERVAL_MS)
+            }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) persistProgress()
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this)
+        library = AutoLibrary(this)
+        val prefs = getSharedPreferences(AutoLibrary.PREFS, MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(skipPrefsListener)
+        val exo = ExoPlayer.Builder(this)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -24,11 +91,20 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setSeekBackIncrementMs(library.skipBackMs())
+            .setSeekForwardIncrementMs(library.skipForwardMs())
             .build()
-        player.trackSelectionParameters = player.trackSelectionParameters
+        exo.trackSelectionParameters = exo.trackSelectionParameters
             .buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
             .build()
+        exo.addListener(persistListener)
+        exoPlayer = exo
+        val skipPlayer = SkipAwarePlayer(exo).apply {
+            backIncrementMs = library.skipBackMs()
+            forwardIncrementMs = library.skipForwardMs()
+        }
+        player = skipPlayer
         val sessionActivity = PendingIntent.getActivity(
             this,
             0,
@@ -37,19 +113,228 @@ class PlaybackService : MediaSessionService() {
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        session = MediaSession.Builder(this, player)
+        session = MediaLibrarySession.Builder(this, skipPlayer, LibraryCallback())
             .setSessionActivity(sessionActivity)
             .build()
+        scheduleWidgetUpdate(skipPlayer)
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+        return session
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val result = super.onStartCommand(intent, flags, startId)
+        when (intent?.action) {
+            ACTION_WIDGET_PLAY_PAUSE -> handleWidgetPlayPause()
+            ACTION_WIDGET_SEEK_BACK -> player?.seekBack()
+            ACTION_WIDGET_SEEK_FORWARD -> player?.seekForward()
+        }
+        return result
+    }
 
     override fun onDestroy() {
+        handler.removeCallbacks(persistWhilePlaying)
+        handler.removeCallbacks(widgetUpdateRunnable)
+        persistProgress()
+        player?.let { captureNowPlaying(it, this) }
+        val app = applicationContext
+        handler.post {
+            CoroutineScope(Dispatchers.Main.immediate).launch {
+                refreshNowPlayingWidgets(app)
+            }
+        }
+        scope.cancel()
+        getSharedPreferences(AutoLibrary.PREFS, MODE_PRIVATE)
+            .unregisterOnSharedPreferenceChangeListener(skipPrefsListener)
         session?.run {
+            exoPlayer?.removeListener(persistListener)
             player.release()
             release()
         }
         session = null
+        player = null
+        exoPlayer = null
         super.onDestroy()
+    }
+
+    private fun handleWidgetPlayPause() {
+        val exo = player ?: return
+        if (exo.mediaItemCount == 0) {
+            val resume = library.playbackResumption() ?: return
+            exo.setMediaItems(resume.mediaItems, resume.startIndex, resume.startPositionMs)
+            exo.prepare()
+            exo.play()
+            player?.let {
+                captureNowPlaying(it, this)
+                lastWidgetUpdateAt = 0L
+                pushWidgetUpdate()
+            }
+            return
+        }
+        if (exo.isPlaying) exo.pause() else exo.play()
+        player?.let {
+            captureNowPlaying(it, this)
+            lastWidgetUpdateAt = 0L
+            pushWidgetUpdate()
+        }
+    }
+
+    private fun persistProgress() {
+        val exo = player ?: return
+        library.persistFromPlayer(exo)
+    }
+
+    private fun scheduleWidgetUpdate(player: Player) {
+        captureNowPlaying(player, this)
+        val now = System.currentTimeMillis()
+        if (now - lastWidgetUpdateAt < WIDGET_THROTTLE_MS) {
+            handler.removeCallbacks(widgetUpdateRunnable)
+            handler.postDelayed(widgetUpdateRunnable, WIDGET_THROTTLE_MS)
+            return
+        }
+        lastWidgetUpdateAt = now
+        pushWidgetUpdate()
+    }
+
+    private val widgetUpdateRunnable = Runnable {
+        player?.let { captureNowPlaying(it, this) }
+        lastWidgetUpdateAt = System.currentTimeMillis()
+        pushWidgetUpdate()
+    }
+
+    private fun pushWidgetUpdate() {
+        scope.launch(Dispatchers.Default) {
+            refreshNowPlayingWidgets(applicationContext)
+        }
+    }
+
+    private inner class LibraryCallback : MediaLibrarySession.Callback {
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val extras = AutoLibrary.contentStyleExtras
+            val resultParams = MediaLibraryService.LibraryParams.Builder()
+                .setExtras(extras)
+                .build()
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(library.libraryRoot(), resultParams),
+            )
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            val children = library.children(parentId)
+            return Futures.immediateFuture(
+                LibraryResult.ofItemList(ImmutableList.copyOf(children), params),
+            )
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String,
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val item = library.item(mediaId)
+                ?: return Futures.immediateFuture(
+                    LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE),
+                )
+            return Futures.immediateFuture(LibraryResult.ofItem(item, null))
+        }
+
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+        ): ListenableFuture<MutableList<MediaItem>> {
+            val resolved = resolve(mediaItems) ?: return Futures.immediateFuture(mediaItems)
+            applyPlaybackPrefs()
+            return Futures.immediateFuture(resolved.mediaItems.toMutableList())
+        }
+
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val resolved = resolve(mediaItems)
+                ?: return Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs),
+                )
+            applyPlaybackPrefs()
+            return Futures.immediateFuture(resolved)
+        }
+
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val resumed = library.playbackResumption()
+                ?: return Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0L),
+                )
+            applyPlaybackPrefs()
+            return Futures.immediateFuture(resumed)
+        }
+
+        private fun resolve(
+            mediaItems: List<MediaItem>,
+        ): MediaSession.MediaItemsWithStartPosition? {
+            val mediaId = mediaItems.firstOrNull()?.mediaId?.takeIf { it.isNotBlank() } ?: return null
+            return library.resolvePlay(mediaId)
+        }
+
+        private fun applyPlaybackPrefs() {
+            val exo = exoPlayer ?: return
+            exo.setPlaybackSpeed(library.speed())
+            exo.repeatMode = if (library.repeatEnabled()) {
+                Player.REPEAT_MODE_ALL
+            } else {
+                Player.REPEAT_MODE_OFF
+            }
+        }
+    }
+
+    companion object {
+        const val ACTION_WIDGET_PLAY_PAUSE = "xyz.saltedchips.bookyplayer.action.WIDGET_PLAY_PAUSE"
+        const val ACTION_WIDGET_SEEK_BACK = "xyz.saltedchips.bookyplayer.action.WIDGET_SEEK_BACK"
+        const val ACTION_WIDGET_SEEK_FORWARD = "xyz.saltedchips.bookyplayer.action.WIDGET_SEEK_FORWARD"
+        private const val PERSIST_INTERVAL_MS = 5_000L
+        private const val WIDGET_THROTTLE_MS = 400L
+    }
+}
+
+private class SkipAwarePlayer(
+    player: ExoPlayer,
+) : ForwardingPlayer(player) {
+    var backIncrementMs: Long = 10_000L
+    var forwardIncrementMs: Long = 10_000L
+
+    override fun getSeekBackIncrement(): Long = backIncrementMs
+
+    override fun getSeekForwardIncrement(): Long = forwardIncrementMs
+
+    override fun seekBack() {
+        seekTo((currentPosition - backIncrementMs).coerceAtLeast(0L))
+    }
+
+    override fun seekForward() {
+        val duration = duration
+        val target = currentPosition + forwardIncrementMs
+        if (duration == C.TIME_UNSET) {
+            seekTo(target)
+        } else {
+            seekTo(target.coerceAtMost(duration))
+        }
     }
 }
