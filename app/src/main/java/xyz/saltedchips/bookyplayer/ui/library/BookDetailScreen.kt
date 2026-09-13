@@ -22,6 +22,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
@@ -75,6 +76,7 @@ fun BookDetailScreen(
     onUpdateMetadata: (String, String, String, List<String>, Bitmap?) -> Unit,
     onDelete: () -> Unit,
     onMarkPlayed: () -> Unit,
+    onResetProgress: () -> Unit,
     onBack: () -> Unit,
     bottomContentPadding: Dp = 16.dp,
     modifier: Modifier = Modifier,
@@ -94,6 +96,7 @@ fun BookDetailScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    var confirmingReset by remember { mutableStateOf(false) }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selectedIndices by rememberSaveable { mutableStateOf(setOf<Int>()) }
     var revealedIndex by remember { mutableStateOf<Int?>(null) }
@@ -229,19 +232,28 @@ fun BookDetailScreen(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Delete") },
-                                leadingIcon = { Icon(BookyIcons.delete, contentDescription = null) },
-                                onClick = {
-                                    menuOpen = false
-                                    confirmingDelete = true
-                                },
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Mark as played") },
                                 leadingIcon = { Icon(BookyIcons.doneAll, contentDescription = null) },
                                 onClick = {
                                     menuOpen = false
                                     onMarkPlayed()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Reset") },
+                                leadingIcon = { Icon(BookyIcons.restartAlt, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    confirmingReset = true
+                                },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                leadingIcon = { Icon(BookyIcons.delete, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    confirmingDelete = true
                                 },
                             )
                         }
@@ -411,6 +423,24 @@ fun BookDetailScreen(
                 onUpdateMetadata(title, author, narrator, chapters, cover)
             },
             onDismiss = { editing = false },
+        )
+    }
+    if (confirmingReset) {
+        AlertDialog(
+            onDismissRequest = { confirmingReset = false },
+            title = { Text("Reset progress?") },
+            text = { Text("Clear all listening progress for ${book.title}.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmingReset = false
+                        onResetProgress()
+                    },
+                ) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingReset = false }) { Text("Cancel") }
+            },
         )
     }
     if (confirmingDelete) {

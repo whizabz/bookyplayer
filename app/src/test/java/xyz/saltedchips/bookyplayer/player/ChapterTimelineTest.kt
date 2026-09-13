@@ -76,9 +76,19 @@ class ChapterTimelineTest {
     }
 
     @Test
-    fun windowForBookPositionFindsChapterInSecondFile() {
-        val (index, offset) = windowForBookPosition(5_410_000L, durations)
-        assertEquals(3, index)
-        assertEquals(10_000L, offset)
+    fun unplayingLastChapterRewindsBookPosition() {
+        val durations = listOf(3_600_000L)
+        val allPlayed = setOf(0)
+        assertEquals(3_600_000L, listenedMsFromChapterMarks(durations, allPlayed))
+        assertEquals(true, allChaptersComplete(durations, allPlayed))
+        assertEquals(0L, listenedMsFromChapterMarks(durations, emptySet()))
+        assertEquals(false, allChaptersComplete(durations, emptySet()))
+    }
+
+    @Test
+    fun unplayingMiddleChapterUsesFirstIncompleteStart() {
+        val completed = setOf(0, 2, 3, 4)
+        assertEquals(1_800_000L, listenedMsFromChapterMarks(durations, completed))
+        assertEquals(false, allChaptersComplete(durations, completed))
     }
 }

@@ -322,6 +322,39 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         persist()
     }
 
+    fun resetBookProgress(bookId: String) {
+        writeCompleted(bookId, emptySet())
+        writeChapterProgress(bookId, emptyMap())
+        if (prefs.getString(KEY_BOOK_ID, null) == bookId) {
+            prefs.edit().putLong(KEY_POSITION, 0L).apply()
+        }
+        if (_state.value.book?.id != bookId) return
+        completedChapters.clear()
+        chapterProgress.clear()
+        val book = _state.value.book ?: return
+        applyChapterWindow(book, 0, 0L)
+        val player = controller
+        if (player != null && isBookLoaded(book)) {
+            player.seekTo(0, 0L)
+            publishFromPlayer()
+            completedChapters.clear()
+            chapterProgress.clear()
+            persistCompleted(bookId)
+            persistChapterProgress()
+        } else {
+            loadCurrentBook(playWhenReady = player?.isPlaying == true, resetPosition = true)
+        }
+        _state.update {
+            it.copy(
+                finished = false,
+                completedChapters = emptySet(),
+                chapterPositionsMs = emptyMap(),
+                chapterMarksEpoch = it.chapterMarksEpoch + 1,
+            )
+        }
+        persist()
+    }
+
     fun peekCompletedChapters(book: Audiobook): Set<Int> {
         if (_state.value.book?.id == book.id) return completedChapters.toSet()
         val key = KEY_CHAPTER_COMPLETE + book.id.hashCode()
@@ -346,25 +379,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return ChapterMarksSnapshot(decodeCompleted(bookId), decodeChapterProgress(bookId))
     }
 
-    fun restoreChapterMarks(bookId: String, snapshot: ChapterMarksSnapshot) {
+    fun restoreChapterMarks(bookId: String, snapshot: ChapterMarksSnapshot): Long {
         writeCompleted(bookId, snapshot.completed)
         writeChapterProgress(bookId, snapshot.progress)
-        if (_state.value.book?.id == bookId) {
-            completedChapters.clear()
-            completedChapters += snapshot.completed
-            chapterProgress.clear()
-            chapterProgress += snapshot.progress
-            _state.update {
-                it.copy(
-                    completedChapters = completedChapters.toSet(),
-                    chapterPositionsMs = chapterProgress.toMap(),
-                )
-            }
-        }
+        return applyChapterMarks(bookId, snapshot.completed, snapshot.progress)
     }
 
-    fun setChaptersPlayed(bookId: String, indices: Collection<Int>, played: Boolean) {
-        if (indices.isEmpty()) return
+    fun setChaptersPlayed(bookId: String, indices: Collection<Int>, played: Boolean): Long {
+        if (indices.isEmpty()) return currentListenedMs(bookId)
         val current = peekCompletedChaptersInternal(bookId).toMutableSet()
         val progress = if (_state.value.book?.id == bookId) {
             chapterProgress.toMutableMap()
@@ -376,23 +398,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             indices.forEach { progress.remove(it) }
         } else {
             current -= indices.toSet()
+            indices.forEach { progress.remove(it) }
         }
         writeCompleted(bookId, current)
         writeChapterProgress(bookId, progress)
-        if (_state.value.book?.id == bookId) {
-            completedChapters.clear()
-            completedChapters += current
-            chapterProgress.clear()
-            chapterProgress += progress
-            _state.update {
-                it.copy(
-                    completedChapters = completedChapters.toSet(),
-                    chapterPositionsMs = chapterProgress.toMap() +
-                        (_state.value.currentChapterIndex to _state.value.chapterPositionMs),
-                )
-            }
-            persistChapterProgress()
-        }
+        return applyChapterMarks(bookId, current, progress)
     }
 
     fun toggleRepeat() {
@@ -838,6 +848,79 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 chapterMarksEpoch = it.chapterMarksEpoch + 1,
             )
         }
+    }
+
+    private fun bookForMarks(bookId: String): Audiobook? {
+        return _state.value.book?.takeIf { it.id == bookId }
+            ?: libraryBooks.find { it.id == bookId }
+            ?: autoLibrary.bookById(bookId)
+    }
+
+    private fun markDurations(book: Audiobook): List<Long> {
+        return book.chapterDurationsMs.ifEmpty {
+            if (book.durationMs > 0L) listOf(book.durationMs) else emptyList()
+        }
+    }
+
+    private fun currentListenedMs(bookId: String): Long {
+        if (_state.value.book?.id == bookId) return _state.value.bookPositionMs
+        val book = bookForMarks(bookId) ?: return 0L
+        return listenedMsFromChapterMarks(
+            markDurations(book),
+            peekCompletedChaptersInternal(bookId),
+            decodeChapterProgress(bookId),
+        )
+    }
+
+    private fun applyChapterMarks(
+        bookId: String,
+        completed: Set<Int>,
+        progress: Map<Int, Long>,
+    ): Long {
+        val book = bookForMarks(bookId)
+        val durations = book?.let(::markDurations).orEmpty()
+        val position = listenedMsFromChapterMarks(durations, completed, progress)
+        val finished = allChaptersComplete(durations, completed)
+        if (prefs.getString(KEY_BOOK_ID, null) == bookId) {
+            prefs.edit().putLong(KEY_POSITION, position).apply()
+        }
+        if (_state.value.book?.id != bookId || book == null) return position
+        completedChapters.clear()
+        completedChapters += completed
+        chapterProgress.clear()
+        chapterProgress += progress
+        val (index, offset) = windowForBookPosition(position, durations)
+        applyChapterWindow(book, index, offset)
+        val player = controller
+        if (player != null && isBookLoaded(book)) {
+            if (finished) {
+                player.pause()
+                player.seekToBookPosition(position, durations)
+            } else {
+                player.seekTo(index, offset)
+            }
+            publishFromPlayer()
+        } else if (player != null) {
+            loadCurrentBook(playWhenReady = player.playWhenReady, resetPosition = true)
+        }
+        completedChapters.clear()
+        completedChapters += completed
+        chapterProgress.clear()
+        chapterProgress += progress
+        persistCompleted(bookId)
+        persistChapterProgress()
+        _state.update {
+            it.copy(
+                finished = finished,
+                isPlaying = if (finished) false else it.isPlaying,
+                completedChapters = completed.toSet(),
+                chapterPositionsMs = progress,
+                bookPositionMs = position,
+                chapterMarksEpoch = it.chapterMarksEpoch + 1,
+            )
+        }
+        persist(captureChapter = false)
+        return position
     }
 
     private fun applyChapterWindow(book: Audiobook, index: Int, offset: Long) {

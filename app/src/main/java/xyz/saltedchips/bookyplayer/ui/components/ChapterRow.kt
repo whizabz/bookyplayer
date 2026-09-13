@@ -45,9 +45,8 @@ fun chapterListenProgress(
     val start = chapterBookStartMs(chapterDurationsMs, index)
     val end = start + durationMs
     val fromBook = when {
-        bookPositionMs >= end - 2_000L -> durationMs
-        bookPositionMs > start -> (bookPositionMs - start).coerceAtMost(durationMs)
-        else -> 0L
+        bookPositionMs <= start || bookPositionMs >= end -> 0L
+        else -> (bookPositionMs - start).coerceAtMost(durationMs)
     }
     val fromSaved = savedPositionsMs[index] ?: 0L
     return (maxOf(fromBook, fromSaved).toFloat() / durationMs).coerceIn(0f, 1f)

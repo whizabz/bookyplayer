@@ -58,3 +58,23 @@ fun seedCompletedChapterIndices(
     }
     return done
 }
+
+fun allChaptersComplete(durations: List<Long>, completed: Set<Int>): Boolean {
+    if (durations.isEmpty()) return completed.isNotEmpty()
+    return durations.indices.all { it in completed }
+}
+
+fun listenedMsFromChapterMarks(
+    durations: List<Long>,
+    completed: Set<Int>,
+    savedPositionsMs: Map<Int, Long> = emptyMap(),
+): Long {
+    if (durations.isEmpty()) return 0L
+    if (allChaptersComplete(durations, completed)) {
+        return durations.sumOf { it.coerceAtLeast(0L) }
+    }
+    val firstIncomplete = durations.indices.first { it !in completed }
+    val length = durations[firstIncomplete].coerceAtLeast(0L)
+    val saved = (savedPositionsMs[firstIncomplete] ?: 0L).coerceIn(0L, length)
+    return chapterBookStartMs(durations, firstIncomplete) + saved
+}

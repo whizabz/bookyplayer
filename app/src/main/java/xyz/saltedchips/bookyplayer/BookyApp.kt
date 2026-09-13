@@ -284,11 +284,17 @@ fun BookyApp(
                                         }
                                     },
                                     onSetChaptersPlayed = { indices, played ->
-                                        playerViewModel.setChaptersPlayed(book.id, indices, played)
+                                        val position = playerViewModel.setChaptersPlayed(
+                                            book.id,
+                                            indices,
+                                            played,
+                                        )
+                                        libraryViewModel.setListened(book.id, position)
                                     },
                                     onSnapshotMarks = { playerViewModel.snapshotChapterMarks(book.id) },
                                     onRestoreMarks = { snapshot ->
-                                        playerViewModel.restoreChapterMarks(book.id, snapshot)
+                                        val position = playerViewModel.restoreChapterMarks(book.id, snapshot)
+                                        libraryViewModel.setListened(book.id, position)
                                     },
                                     onUpdateMetadata = { title, author, narrator, chapters, cover ->
                                         libraryViewModel.updateMetadata(
@@ -316,6 +322,10 @@ fun BookyApp(
                                         if (player.book?.id == book.id) {
                                             playerViewModel.markBookPlayed()
                                         }
+                                    },
+                                    onResetProgress = {
+                                        playerViewModel.resetBookProgress(book.id)
+                                        libraryViewModel.setListened(book.id, 0L)
                                     },
                                     onBack = { detailBookId = null },
                                     bottomContentPadding = 24.dp + miniPlayerClearance,
@@ -400,10 +410,14 @@ fun BookyApp(
                     onSetSleepTimer = playerViewModel::setSleepTimer,
                     onRestartChapter = playerViewModel::restartChapter,
                     onMarkChapterPlayed = playerViewModel::markChapterPlayed,
-                    onMarkBookPlayed = playerViewModel::markBookPlayed,
+                    onMarkBookPlayed = {
+                        playerViewModel.markBookPlayed()
+                        player.book?.id?.let { libraryViewModel.markPlayed(listOf(it)) }
+                    },
                     onSetChaptersPlayed = { indices, played ->
                         player.book?.id?.let { id ->
-                            playerViewModel.setChaptersPlayed(id, indices, played)
+                            val position = playerViewModel.setChaptersPlayed(id, indices, played)
+                            libraryViewModel.setListened(id, position)
                         }
                     },
                     onSnapshotMarks = {
@@ -411,7 +425,10 @@ fun BookyApp(
                             ?: xyz.saltedchips.bookyplayer.player.ChapterMarksSnapshot(emptySet(), emptyMap())
                     },
                     onRestoreMarks = { snapshot ->
-                        player.book?.id?.let { playerViewModel.restoreChapterMarks(it, snapshot) }
+                        player.book?.id?.let { id ->
+                            val position = playerViewModel.restoreChapterMarks(id, snapshot)
+                            libraryViewModel.setListened(id, position)
+                        }
                     },
                     onToggleRepeat = playerViewModel::toggleRepeat,
                     onCloseBook = {
