@@ -148,6 +148,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val snapshotBooks = scanned
             val snapshotPrints = fileFingerprints
             val storedFingerprint = treeFingerprint
+            var discoveredIds = snapshotBooks.map { it.id }.toSet()
             val result = withContext(Dispatchers.IO) {
                 try {
                     if (!force && snapshotBooks.isNotEmpty() && storedFingerprint != null) {
@@ -178,10 +179,26 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                                 }
                             }
                         },
+                        onDiscovered = { ids ->
+                            val keep = ids.toSet()
+                            discoveredIds = keep
+                            postScanUpdate(generation, force = true) {
+                                scanned = snapshotBooks.filter { it.id in keep }
+                                fileFingerprints = snapshotPrints.filterKeys { it in keep }
+                                publishBooks(
+                                    scanning = true,
+                                    scanDone = 0,
+                                    scanTotal = ids.size,
+                                    scanLabel = null,
+                                )
+                            }
+                        },
                         onBooks = { books, prints ->
-                            postScanUpdate(generation, force = books.size <= 1) {
-                                scanned = books
-                                fileFingerprints = prints
+                            val keep = discoveredIds
+                            postScanUpdate(generation, force = snapshotBooks.isEmpty()) {
+                                val incoming = books.associateBy { it.id }
+                                scanned = snapshotBooks.filter { it.id in keep && it.id !in incoming } + books
+                                fileFingerprints = snapshotPrints.filterKeys { it in keep && it !in incoming } + prints
                                 publishBooks(
                                     scanning = true,
                                     scanDone = books.size,

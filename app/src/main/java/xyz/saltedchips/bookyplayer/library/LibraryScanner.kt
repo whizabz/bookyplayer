@@ -24,6 +24,7 @@ class LibraryScanner(private val context: Context) {
         treeUri: Uri,
         cache: Map<String, Pair<Audiobook, String>> = emptyMap(),
         onProgress: (done: Int, total: Int, title: String?) -> Unit = { _, _, _ -> },
+        onDiscovered: (List<String>) -> Unit = {},
         onBooks: (List<Audiobook>, Map<String, String>) -> Unit = { _, _ -> },
     ): LibraryScanResult {
         val root = DocumentFile.fromTreeUri(context, treeUri)
@@ -39,6 +40,7 @@ class LibraryScanner(private val context: Context) {
             parts = parts,
         )
         val total = pending.size
+        onDiscovered(pending.map { it.id })
         onProgress(0, total, null)
         val books = mutableListOf<Audiobook>()
         val fingerprints = mutableMapOf<String, String>()
