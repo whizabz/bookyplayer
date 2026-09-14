@@ -37,7 +37,7 @@ val BookyCoverText = Color(0xFFE8C9C4)
 @Composable
 fun BookyTheme(
     appearance: AppearanceMode = AppearanceMode.System,
-    colorTheme: ColorTheme = ColorTheme.Book,
+    colorTheme: ColorTheme = ColorTheme.System,
     book: Audiobook? = null,
     placeholderCover: PlaceholderCoverStyle = PlaceholderCoverStyle.Default,
     content: @Composable () -> Unit,

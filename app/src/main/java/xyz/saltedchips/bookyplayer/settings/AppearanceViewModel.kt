@@ -25,8 +25,8 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
     val mode: StateFlow<AppearanceMode> = _mode
 
     private val _colorTheme = MutableStateFlow(
-        ColorTheme.entries.getOrElse(prefs.getInt(KEY_COLOR_THEME, ColorTheme.Book.ordinal)) {
-            ColorTheme.Book
+        ColorTheme.entries.getOrElse(prefs.getInt(KEY_COLOR_THEME, ColorTheme.System.ordinal)) {
+            ColorTheme.System
         },
     )
     val colorTheme: StateFlow<ColorTheme> = _colorTheme

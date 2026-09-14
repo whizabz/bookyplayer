@@ -1,6 +1,7 @@
 package xyz.saltedchips.bookyplayer.theme
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
@@ -22,14 +23,21 @@ fun rememberArtworkColorScheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
 ): ColorScheme {
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     return remember(book?.id, book?.coverUri, book?.artworkFileUri, book?.coverRes, darkTheme, fallback) {
-        if (book == null) {
-            fallback
+        val extracted = book?.let { extractArtworkSeed(context, it) }
+        if (extracted != null) {
+            prefs.edit().putInt(KEY_ARTWORK_SEED, extracted.toArgb()).apply()
+            colorSchemeFromArtwork(extracted, darkTheme)
         } else {
-            val seed = extractArtworkSeed(context, book)
-            if (seed == null) fallback else colorSchemeFromArtwork(seed, darkTheme)
+            cachedArtworkSeed(prefs)?.let { colorSchemeFromArtwork(it, darkTheme) } ?: fallback
         }
     }
+}
+
+private fun cachedArtworkSeed(prefs: SharedPreferences): Color? {
+    if (!prefs.contains(KEY_ARTWORK_SEED)) return null
+    return Color(prefs.getInt(KEY_ARTWORK_SEED, 0))
 }
 
 private fun extractArtworkSeed(context: Context, book: Audiobook): Color? {
@@ -176,3 +184,6 @@ private fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean): ColorScheme
         )
     }
 }
+
+private const val PREFS_NAME = "booky_prefs"
+private const val KEY_ARTWORK_SEED = "last_artwork_seed"

@@ -50,7 +50,7 @@ import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 fun SettingsScreen(
     appearance: AppearanceMode,
     onAppearanceChange: (AppearanceMode) -> Unit,
-    colorTheme: ColorTheme = ColorTheme.Book,
+    colorTheme: ColorTheme = ColorTheme.System,
     onColorThemeChange: (ColorTheme) -> Unit = {},
     skipBackSeconds: Int = 10,
     skipForwardSeconds: Int = 10,
