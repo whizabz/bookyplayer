@@ -1,3 +1,5 @@
+@file:OptIn(UnstableApi::class)
+
 package xyz.saltedchips.bookyplayer.player
 
 import android.app.PendingIntent
@@ -5,16 +7,21 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -25,11 +32,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import xyz.saltedchips.bookyplayer.MainActivity
 import xyz.saltedchips.bookyplayer.R
+import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_REPEAT
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_BACK
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_FORWARD
 import xyz.saltedchips.bookyplayer.ui.widget.captureNowPlaying
 import xyz.saltedchips.bookyplayer.ui.widget.refreshNowPlayingWidgets
 
+@UnstableApi
 class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private var player: SkipAwarePlayer? = null
@@ -51,6 +60,16 @@ class PlaybackService : MediaLibraryService() {
         when (key) {
             KEY_SKIP_BACK -> skipPlayer.backIncrementMs = library.skipBackMs()
             KEY_SKIP_FORWARD -> skipPlayer.forwardIncrementMs = library.skipForwardMs()
+            KEY_REPEAT -> {
+                val repeating = library.repeatEnabled()
+                val mode = if (repeating) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+                if (exoPlayer?.repeatMode != mode) {
+                    exoPlayer?.repeatMode = mode
+                }
+            }
+        }
+        if (key == KEY_SKIP_BACK || key == KEY_SKIP_FORWARD || key == KEY_REPEAT) {
+            refreshMediaButtons()
         }
     }
 
@@ -75,6 +94,11 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) persistProgress()
+        }
+
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            library.setRepeatEnabled(repeatMode != Player.REPEAT_MODE_OFF)
+            refreshMediaButtons()
         }
     }
 
@@ -117,6 +141,7 @@ class PlaybackService : MediaLibraryService() {
         )
         session = MediaLibrarySession.Builder(this, skipPlayer, LibraryCallback())
             .setSessionActivity(sessionActivity)
+            .setMediaButtonPreferences(mediaButtonPreferences())
             .build()
         val notifications = DefaultMediaNotificationProvider.Builder(this).build()
         notifications.setSmallIcon(R.drawable.ms_book_2)
@@ -214,7 +239,73 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun refreshMediaButtons() {
+        session?.setMediaButtonPreferences(mediaButtonPreferences())
+    }
+
+    private fun mediaButtonPreferences(): ImmutableList<CommandButton> {
+        val repeating = library.repeatEnabled()
+        return ImmutableList.of(
+            CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+                .setDisplayName("Previous chapter")
+                .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
+                .setSlots(CommandButton.SLOT_BACK)
+                .build(),
+            CommandButton.Builder(CommandButton.ICON_NEXT)
+                .setDisplayName("Next chapter")
+                .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT)
+                .setSlots(CommandButton.SLOT_FORWARD)
+                .build(),
+            CommandButton.Builder(skipBackIcon(library.skipBackSeconds()))
+                .setDisplayName("Seek back")
+                .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                .setSlots(CommandButton.SLOT_BACK_SECONDARY)
+                .build(),
+            CommandButton.Builder(skipForwardIcon(library.skipForwardSeconds()))
+                .setDisplayName("Seek forward")
+                .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                .setSlots(CommandButton.SLOT_FORWARD_SECONDARY)
+                .build(),
+            CommandButton.Builder(
+                if (repeating) CommandButton.ICON_REPEAT_ALL else CommandButton.ICON_REPEAT_OFF,
+            )
+                .setDisplayName("Repeat")
+                .setCustomIconResId(R.drawable.ms_repeat)
+                .setSessionCommand(SessionCommand(COMMAND_REPEAT, android.os.Bundle.EMPTY))
+                .setSlots(CommandButton.SLOT_OVERFLOW)
+                .build(),
+        )
+    }
+
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                .add(SessionCommand(COMMAND_REPEAT, android.os.Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(sessionCommands)
+                .setMediaButtonPreferences(mediaButtonPreferences())
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: android.os.Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == COMMAND_REPEAT) {
+                val enabled = !library.repeatEnabled()
+                library.setRepeatEnabled(enabled)
+                exoPlayer?.repeatMode = if (enabled) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+                refreshMediaButtons()
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            return super.onCustomCommand(session, controller, customCommand, args)
+        }
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -299,6 +390,33 @@ class PlaybackService : MediaLibraryService() {
             return Futures.immediateFuture(resumed)
         }
 
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent,
+        ): Boolean {
+            val event = intent.mediaButtonEvent() ?: return super.onMediaButtonEvent(session, controllerInfo, intent)
+            if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) {
+                return super.onMediaButtonEvent(session, controllerInfo, intent)
+            }
+            val skipPlayer = player ?: return super.onMediaButtonEvent(session, controllerInfo, intent)
+            return when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_NEXT,
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                -> {
+                    skipPlayer.seekForward()
+                    true
+                }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                KeyEvent.KEYCODE_MEDIA_REWIND,
+                -> {
+                    skipPlayer.seekBack()
+                    true
+                }
+                else -> super.onMediaButtonEvent(session, controllerInfo, intent)
+            }
+        }
+
         private fun resolve(
             mediaItems: List<MediaItem>,
         ): MediaSession.MediaItemsWithStartPosition? {
@@ -321,9 +439,31 @@ class PlaybackService : MediaLibraryService() {
         const val ACTION_WIDGET_PLAY_PAUSE = "xyz.saltedchips.bookyplayer.action.WIDGET_PLAY_PAUSE"
         const val ACTION_WIDGET_SEEK_BACK = "xyz.saltedchips.bookyplayer.action.WIDGET_SEEK_BACK"
         const val ACTION_WIDGET_SEEK_FORWARD = "xyz.saltedchips.bookyplayer.action.WIDGET_SEEK_FORWARD"
+        private const val COMMAND_REPEAT = "xyz.saltedchips.bookyplayer.REPEAT"
         private const val PERSIST_INTERVAL_MS = 5_000L
         private const val WIDGET_THROTTLE_MS = 400L
     }
+}
+
+private fun skipBackIcon(seconds: Int): Int = when (seconds) {
+    5 -> CommandButton.ICON_SKIP_BACK_5
+    10 -> CommandButton.ICON_SKIP_BACK_10
+    15 -> CommandButton.ICON_SKIP_BACK_15
+    30 -> CommandButton.ICON_SKIP_BACK_30
+    else -> CommandButton.ICON_SKIP_BACK
+}
+
+private fun skipForwardIcon(seconds: Int): Int = when (seconds) {
+    5 -> CommandButton.ICON_SKIP_FORWARD_5
+    10 -> CommandButton.ICON_SKIP_FORWARD_10
+    15 -> CommandButton.ICON_SKIP_FORWARD_15
+    30 -> CommandButton.ICON_SKIP_FORWARD_30
+    else -> CommandButton.ICON_SKIP_FORWARD
+}
+
+@Suppress("DEPRECATION")
+private fun Intent.mediaButtonEvent(): KeyEvent? {
+    return extras?.getParcelable(Intent.EXTRA_KEY_EVENT) as? KeyEvent
 }
 
 private class SkipAwarePlayer(

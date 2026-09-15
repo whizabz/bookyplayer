@@ -1,7 +1,6 @@
 package xyz.saltedchips.bookyplayer.player
 
 import android.content.Context
-import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -102,9 +101,17 @@ class AutoLibrary(context: Context) {
 
     fun skipForwardMs(): Long = snapSkipSeconds(prefs.getInt(KEY_SKIP_FORWARD, 10)) * 1_000L
 
+    fun skipBackSeconds(): Int = snapSkipSeconds(prefs.getInt(KEY_SKIP_BACK, 10))
+
+    fun skipForwardSeconds(): Int = snapSkipSeconds(prefs.getInt(KEY_SKIP_FORWARD, 10))
+
     fun speed(): Float = prefs.getFloat(KEY_SPEED, 1f)
 
     fun repeatEnabled(): Boolean = prefs.getBoolean(KEY_REPEAT, false)
+
+    fun setRepeatEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_REPEAT, enabled).apply()
+    }
 
     fun bookById(bookId: String): Audiobook? = visibleBooks().find { it.id == bookId }
 
@@ -230,14 +237,10 @@ class AutoLibrary(context: Context) {
         return map
     }
 
-    private fun artworkUri(book: Audiobook): Uri? {
-        return book.coverUri?.let(Uri::parse)
-    }
-
     private fun decorateArtwork(builder: MediaMetadata.Builder, book: Audiobook): MediaMetadata.Builder {
-        artworkUri(book)?.let(builder::setArtworkUri)
-        CoverLoader.sessionArtwork(appContext, book)?.let { bytes ->
-            builder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+        CoverLoader.sessionArtwork(appContext, book)?.let { art ->
+            builder.setArtworkUri(art.contentUri)
+            builder.setArtworkData(art.bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
         }
         return builder
     }

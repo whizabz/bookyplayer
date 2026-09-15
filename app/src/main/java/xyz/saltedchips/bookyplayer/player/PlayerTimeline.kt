@@ -1,7 +1,6 @@
 package xyz.saltedchips.bookyplayer.player
 
 import android.content.Context
-import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -12,8 +11,7 @@ import xyz.saltedchips.bookyplayer.library.CoverLoader
 
 fun Audiobook.toMediaItems(context: Context? = null): List<MediaItem> {
     val uris = mediaUris.ifEmpty { listOfNotNull(artworkFileUri) }
-    val artworkUri = coverUri?.let(Uri::parse)
-    val artworkData = context?.let { CoverLoader.sessionArtwork(it, this) }
+    val artwork = context?.let { CoverLoader.sessionArtwork(it, this) }
     return uris.mapIndexed { index, uri ->
         val startMs = chapterStartMs.getOrNull(index) ?: 0L
         val durationMs = chapterDurationsMs.getOrNull(index) ?: 0L
@@ -24,9 +22,9 @@ fun Audiobook.toMediaItems(context: Context? = null): List<MediaItem> {
             .setAlbumTitle(title)
             .setDisplayTitle(chapterTitles.getOrNull(index) ?: currentChapterTitle)
             .setWriter(narrator.takeIf { it.isNotBlank() && it != "Unknown" })
-            .setArtworkUri(artworkUri)
-        if (artworkData != null) {
-            metadata.setArtworkData(artworkData, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            .setArtworkUri(artwork?.contentUri)
+        if (artwork != null) {
+            metadata.setArtworkData(artwork.bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
         }
         val builder = MediaItem.Builder()
             .setUri(uri)
