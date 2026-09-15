@@ -1,6 +1,8 @@
 package xyz.saltedchips.bookyplayer.ui.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -40,6 +42,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -89,6 +92,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -104,22 +108,24 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp as lerpColor
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.lerp as lerpTextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.util.lerp as lerpInt
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.round
+import androidx.compose.ui.util.lerp as lerpFloat
 import xyz.saltedchips.bookyplayer.data.formatClock
 import xyz.saltedchips.bookyplayer.data.formatMinutes
 import xyz.saltedchips.bookyplayer.player.ChapterMarksSnapshot
@@ -148,6 +154,7 @@ private class ExpandedSlotLock {
     var play by mutableStateOf<Offset?>(null)
     var skip by mutableStateOf<Offset?>(null)
     var title by mutableStateOf<Offset?>(null)
+    var titleSize by mutableStateOf<IntSize?>(null)
     var slider by mutableStateOf<Offset?>(null)
     var sliderSize by mutableStateOf<IntSize?>(null)
 }
@@ -178,8 +185,10 @@ fun NowPlayingScreen(
 ) {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
-    val motion = MaterialTheme.motionScheme
-    val spatialSpec = motion.slowSpatialSpec<Float>()
+    val spatialSpec = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    )
     val miniContainer =
         if (colors.background.luminance() < 0.5f) {
             colors.surfaceContainerLowest
@@ -540,17 +549,23 @@ private fun NowPlayingContent(
     val measuredSlider = slotOffset(parentCoords, sliderSlot)
     val measuredSliderSize = sliderSlot?.takeIf { it.isAttached }?.size
     val measuredTitle = slotOffset(parentCoords, titleSlot)
+    val measuredTitleSize = titleSlot?.takeIf { it.isAttached }?.size
     SideEffect {
-        if (measurementOnly || transportSettled) {
+        if (measurementOnly) {
             measuredPlay?.let { slotLock.play = it }
             measuredSkip?.let { slotLock.skip = it }
             measuredTitle?.let { slotLock.title = it }
+            measuredTitleSize?.let { slotLock.titleSize = it }
+            measuredSlider?.let { slotLock.slider = it }
+            measuredSliderSize?.let { slotLock.sliderSize = it }
+        } else if (transportSettled) {
+            measuredPlay?.let { slotLock.play = it }
+            measuredSkip?.let { slotLock.skip = it }
             measuredSlider?.let { slotLock.slider = it }
             measuredSliderSize?.let { slotLock.sliderSize = it }
         }
     }
     val titleExpandedOffset = slotLock.title
-        ?: measuredTitle.takeIf { transportSettled }
         ?: Offset(
             padExpPx,
             coverExpandedOffset.y + coverExpandedSize + with(density) { 16.dp.toPx() },
@@ -610,7 +625,8 @@ private fun NowPlayingContent(
     )
     val coverOffset = lerpOffset(coverExpandedOffset, coverCollapsedOffset, collapseProgress)
     val titleOffset = lerpOffset(titleExpandedOffset, titleCollapsedOffset, collapseProgress)
-    val expandedTitleWidth = with(density) { (fullWidthPx - padExpPx * 2f).toDp() }
+    val expandedTitleWidth = slotLock.titleSize?.let { with(density) { it.width.toDp() } }
+        ?: with(density) { (fullWidthPx - padExpPx * 2f).toDp() }
     val coverCorner = lerp(16.dp, MiniCoverSize / 2f, collapseProgress)
     val sliderExpandedSize = slotLock.sliderSize
         ?: measuredSliderSize.takeIf { transportSettled }
@@ -674,13 +690,6 @@ private fun NowPlayingContent(
                     .aspectRatio(1f),
             )
             Spacer(Modifier.height(16.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .onGloballyPositioned { titleSlot = it },
-            )
-            Spacer(Modifier.height(12.dp))
             val chapterCount = book.chapterTitles.size.coerceAtLeast(1)
             val chapterIndex = player.currentChapterIndex.coerceIn(0, chapterCount - 1)
             val chapterButtonSize = IconButtonDefaults.smallContainerSize(
@@ -701,23 +710,22 @@ private fun NowPlayingContent(
                 ) {
                     Icon(BookyIcons.skipPrevious, contentDescription = "Previous chapter")
                 }
-                Text(
-                    text = book.currentChapterTitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                    softWrap = false,
+                Box(
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 8.dp)
-                        .basicMarquee(
-                            iterations = Int.MAX_VALUE,
-                            repeatDelayMillis = 5_000,
-                            initialDelayMillis = 0,
-                        ),
-                )
+                        .onGloballyPositioned { titleSlot = it },
+                ) {
+                    MorphingNowPlayingTitle(
+                        title = book.title,
+                        subtitle = book.currentChapterTitle,
+                        collapseProgress = 0f,
+                        expandedWidth = expandedTitleWidth,
+                        typography = typography,
+                        colors = colors,
+                        modifier = Modifier.graphicsLayer { alpha = 0f },
+                    )
+                }
                 FilledTonalIconButton(
                     onClick = { onSeekChapter(chapterIndex + 1) },
                     enabled = chapterIndex < chapterCount - 1,
@@ -730,6 +738,23 @@ private fun NowPlayingContent(
                     Icon(BookyIcons.skipNext, contentDescription = "Next chapter")
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = book.author,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                softWrap = false,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .basicMarquee(
+                        iterations = Int.MAX_VALUE,
+                        repeatDelayMillis = 5_000,
+                        initialDelayMillis = 0,
+                    ),
+            )
 
             Spacer(Modifier.height(8.dp))
             Box(
@@ -979,8 +1004,7 @@ private fun NowPlayingContent(
         )
         MorphingNowPlayingTitle(
             title = book.title,
-            author = book.author,
-            chapterTitle = book.currentChapterTitle,
+            subtitle = book.currentChapterTitle,
             collapseProgress = collapseProgress,
             expandedWidth = expandedTitleWidth,
             typography = typography,
@@ -1438,82 +1462,68 @@ private fun effectsScrim(raw: Float): Float {
 @Composable
 private fun MorphingNowPlayingTitle(
     title: String,
-    author: String,
-    chapterTitle: String,
+    subtitle: String,
     collapseProgress: Float,
     expandedWidth: Dp,
     typography: Typography,
     colors: ColorScheme,
     modifier: Modifier = Modifier,
 ) {
-    val expandedAlpha = 1f - collapseProgress
-    val miniAlpha = collapseProgress
-    Layout(
-        modifier = modifier.clipToBounds(),
-        content = {
-            Column(
-                modifier = Modifier
-                    .width(expandedWidth)
-                    .graphicsLayer { alpha = expandedAlpha },
-                horizontalAlignment = Alignment.CenterHorizontally,
+    val width = lerp(expandedWidth, MiniTitleWidth, collapseProgress)
+    val morphTitleStyle = lerpSizeOnly(typography.titleLarge, typography.bodyLarge, collapseProgress)
+    val morphSubtitleStyle = lerpSizeOnly(typography.titleMedium, typography.bodySmall, collapseProgress)
+        .copy(color = lerpColor(colors.onSurface, colors.onSurfaceVariant, collapseProgress))
+    val horizontalBias = lerpFloat(0f, -1f, collapseProgress)
+    val titleMaxHeight = lerp(72.dp, 22.dp, collapseProgress)
+    Box(modifier.width(width)) {
+        Column(Modifier.fillMaxWidth()) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = titleMaxHeight)
+                    .clipToBounds(),
             ) {
                 Text(
                     text = title,
-                    style = typography.titleLarge,
-                    textAlign = TextAlign.Center,
+                    style = morphTitleStyle,
+                    textAlign = TextAlign.Start,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = "by $author",
-                    style = typography.titleMedium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .widthIn(max = width)
+                        .align(BiasAlignment(horizontalBias, -1f)),
                 )
             }
-            Column(
-                modifier = Modifier
-                    .width(MiniTitleWidth)
-                    .graphicsLayer { alpha = miniAlpha },
-            ) {
+            Box(Modifier.fillMaxWidth()) {
                 Text(
-                    text = title,
-                    style = typography.bodyLarge,
+                    text = subtitle,
+                    style = morphSubtitleStyle,
                     textAlign = TextAlign.Start,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = chapterTitle,
-                    style = typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .widthIn(max = width)
+                        .align(BiasAlignment(horizontalBias, -1f)),
                 )
             }
-        },
-    ) { measurables, _ ->
-        val expandedPlaceable = measurables[0].measure(Constraints())
-        val miniPlaceable = measurables[1].measure(Constraints())
-        val width = lerpInt(
-            expandedPlaceable.width,
-            miniPlaceable.width,
-            collapseProgress,
-        )
-        val height = lerpInt(
-            expandedPlaceable.height,
-            miniPlaceable.height,
-            collapseProgress,
-        )
-        layout(width, height) {
-            expandedPlaceable.place(0, 0)
-            miniPlaceable.place(0, 0)
         }
     }
+}
+
+@Suppress("DEPRECATION")
+private fun TextStyle.withoutFontPadding() = copy(
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+)
+
+private fun lerpSizeOnly(expanded: TextStyle, collapsed: TextStyle, progress: Float): TextStyle {
+    return lerpTextStyle(expanded, collapsed, progress).copy(
+        fontFamily = expanded.fontFamily,
+        fontWeight = expanded.fontWeight,
+        fontStyle = expanded.fontStyle,
+        fontSynthesis = expanded.fontSynthesis,
+        letterSpacing = expanded.letterSpacing,
+        fontFeatureSettings = expanded.fontFeatureSettings,
+    ).withoutFontPadding()
 }
 
 private fun slotOffset(parent: LayoutCoordinates?, slot: LayoutCoordinates?): Offset? {
