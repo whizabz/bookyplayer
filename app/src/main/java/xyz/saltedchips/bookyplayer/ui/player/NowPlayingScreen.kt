@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -99,12 +100,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp as lerpOffset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp as lerpColor
@@ -429,6 +427,10 @@ fun NowPlayingScreen(
             contentColor = colors.onSurface,
             shadowElevation = 0.dp,
             tonalElevation = 0.dp,
+            border = BorderStroke(
+                width = 1.dp,
+                color = colors.secondaryContainer.copy(alpha = collapseProgress),
+            ),
         ) {
             NowPlayingContent(
                 player = player,
@@ -667,6 +669,17 @@ private fun NowPlayingContent(
             .fillMaxSize()
             .onGloballyPositioned { parentCoords = it },
     ) {
+        val miniFillT = ((collapseProgress - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        if (miniFillT > 0f) {
+            val fillFraction = (chapterPosition / chapterDuration).coerceIn(0f, 1f)
+            val fillColor = colors.primary.copy(alpha = 0.28f * miniFillT)
+            Canvas(Modifier.fillMaxSize()) {
+                drawRect(
+                    color = fillColor,
+                    size = Size(size.width * fillFraction + 2f, size.height),
+                )
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1396,51 +1409,33 @@ private fun MorphingChapterSlider(
                     val split = size.width * fraction
                     val gapPx = thumbGap.toPx() +
                         (thumbSize.width.toPx() / 2f) * (1f - collapseProgress)
-                    if (gapPx < 1f) {
-                        val pill = Path().apply {
-                            addRoundRect(
-                                RoundRect(
-                                    left = 0f,
-                                    top = 0f,
-                                    right = size.width,
-                                    bottom = size.height,
-                                    cornerRadius = corner,
-                                ),
-                            )
-                        }
-                        clipPath(pill) {
-                            drawRect(inactiveColor)
-                            drawRect(
-                                color = activeColor,
-                                size = Size(split.coerceAtLeast(0f), size.height),
-                            )
-                        }
-                    } else {
-                        val activeEnd = (split - gapPx).coerceAtLeast(0f)
-                        val inactiveStart = (split + gapPx).coerceAtMost(size.width)
-                        if (activeEnd > 0f) {
-                            drawRoundRect(
-                                color = activeColor,
-                                size = Size(activeEnd, size.height),
-                                cornerRadius = corner,
-                            )
-                        }
-                        val inactiveWidth = size.width - inactiveStart
-                        if (inactiveWidth > 0f) {
-                            drawRoundRect(
-                                color = inactiveColor,
-                                topLeft = Offset(inactiveStart, 0f),
-                                size = Size(inactiveWidth, size.height),
-                                cornerRadius = corner,
-                            )
-                        }
-                        if (thumbAlpha > 0.05f && inactiveWidth > radius * 2f) {
-                            drawCircle(
-                                color = activeColor,
-                                radius = 2.dp.toPx(),
-                                center = Offset(size.width - radius, radius),
-                            )
-                        }
+                    if (gapPx < 1f || collapseProgress > 0.85f) {
+                        return@Canvas
+                    }
+                    val activeEnd = (split - gapPx).coerceAtLeast(0f)
+                    val inactiveStart = (split + gapPx).coerceAtMost(size.width)
+                    if (activeEnd > 0f) {
+                        drawRoundRect(
+                            color = activeColor,
+                            size = Size(activeEnd, size.height),
+                            cornerRadius = corner,
+                        )
+                    }
+                    val inactiveWidth = size.width - inactiveStart
+                    if (inactiveWidth > 0f) {
+                        drawRoundRect(
+                            color = inactiveColor,
+                            topLeft = Offset(inactiveStart, 0f),
+                            size = Size(inactiveWidth, size.height),
+                            cornerRadius = corner,
+                        )
+                    }
+                    if (thumbAlpha > 0.05f && inactiveWidth > radius * 2f) {
+                        drawCircle(
+                            color = activeColor,
+                            radius = 2.dp.toPx(),
+                            center = Offset(size.width - radius, radius),
+                        )
                     }
                 }
             },
