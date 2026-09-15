@@ -21,16 +21,27 @@ fun rememberArtworkColorScheme(
     book: Audiobook?,
     fallback: ColorScheme,
     darkTheme: Boolean = isSystemInDarkTheme(),
+    contrast: Float = 0f,
 ): ColorScheme {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
-    return remember(book?.id, book?.coverUri, book?.artworkFileUri, book?.coverRes, darkTheme, fallback) {
+    val contrastAmount = contrast.coerceIn(0f, 1f)
+    return remember(
+        book?.id,
+        book?.coverUri,
+        book?.artworkFileUri,
+        book?.coverRes,
+        darkTheme,
+        fallback,
+        contrastAmount,
+    ) {
         val extracted = book?.let { extractArtworkSeed(context, it) }
         if (extracted != null) {
             prefs.edit().putInt(KEY_ARTWORK_SEED, extracted.toArgb()).apply()
-            colorSchemeFromArtwork(extracted, darkTheme)
+            colorSchemeFromArtwork(extracted, darkTheme, contrastAmount)
         } else {
-            cachedArtworkSeed(prefs)?.let { colorSchemeFromArtwork(it, darkTheme) } ?: fallback
+            cachedArtworkSeed(prefs)?.let { colorSchemeFromArtwork(it, darkTheme, contrastAmount) }
+                ?: fallback
         }
     }
 }
@@ -56,18 +67,24 @@ private fun extractArtworkSeed(context: Context, book: Audiobook): Color? {
     }
 }
 
-private fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean): ColorScheme {
+private fun lerp(start: Float, stop: Float, amount: Float): Float =
+    start + (stop - start) * amount
+
+internal fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean, contrast: Float): ColorScheme {
     val hsl = FloatArray(3)
     ColorUtils.colorToHSL(seed.toArgb(), hsl)
     val hue = hsl[0]
     val chroma = hsl[1].coerceIn(0.18f, 0.72f)
+    val t = contrast.coerceIn(0f, 1f)
 
     fun tone(lightness: Float, saturation: Float = chroma) =
         Color(ColorUtils.HSLToColor(floatArrayOf(hue, saturation.coerceIn(0f, 1f), lightness.coerceIn(0f, 1f))))
 
     fun onTone(background: Color): Color {
-        return if (ColorUtils.calculateLuminance(background.toArgb()) > 0.38) {
-            tone(0.12f, chroma * 0.25f)
+        val threshold = lerp(0.42f, 0.34f, t)
+        val lightOn = lerp(0.22f, 0.06f, t)
+        return if (ColorUtils.calculateLuminance(background.toArgb()) > threshold) {
+            tone(lightOn, chroma * 0.25f)
         } else {
             Color.White
         }
@@ -77,18 +94,18 @@ private fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean): ColorScheme
     fun secondary(lightness: Float) = tone(lightness, secondaryChroma)
 
     return if (darkTheme) {
-        val primary = tone(0.80f)
-        val primaryContainer = tone(0.30f)
-        val secondary = secondary(0.80f)
-        val secondaryContainer = secondary(0.28f)
-        val tertiary = tone(0.80f, (chroma * 0.7f).coerceAtMost(0.5f))
-        val tertiaryContainer = tone(0.28f, (chroma * 0.5f).coerceAtMost(0.4f))
-        val surface = tone(0.10f, 0.08f)
-        val surfaceContainer = tone(0.14f, 0.10f)
-        val surfaceContainerHigh = tone(0.17f, 0.10f)
-        val surfaceContainerHighest = tone(0.22f, 0.12f)
-        val surfaceContainerLow = tone(0.12f, 0.08f)
-        val onSurface = tone(0.92f, 0.06f)
+        val primary = tone(lerp(0.76f, 0.86f, t))
+        val primaryContainer = tone(lerp(0.34f, 0.24f, t))
+        val secondary = secondary(lerp(0.76f, 0.86f, t))
+        val secondaryContainer = secondary(lerp(0.32f, 0.22f, t))
+        val tertiary = tone(lerp(0.76f, 0.86f, t), (chroma * 0.7f).coerceAtMost(0.5f))
+        val tertiaryContainer = tone(lerp(0.32f, 0.22f, t), (chroma * 0.5f).coerceAtMost(0.4f))
+        val surface = tone(lerp(0.13f, 0.06f, t), 0.08f)
+        val surfaceContainer = tone(lerp(0.16f, 0.11f, t), 0.10f)
+        val surfaceContainerHigh = tone(lerp(0.19f, 0.14f, t), 0.10f)
+        val surfaceContainerHighest = tone(lerp(0.24f, 0.18f, t), 0.12f)
+        val surfaceContainerLow = tone(lerp(0.14f, 0.09f, t), 0.08f)
+        val onSurface = tone(lerp(0.84f, 0.98f, t), 0.06f)
         darkColorScheme(
             primary = primary,
             onPrimary = onTone(primary),
@@ -108,18 +125,18 @@ private fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean): ColorScheme
             surface = surface,
             onSurface = onSurface,
             surfaceVariant = surfaceContainerHighest,
-            onSurfaceVariant = tone(0.80f, 0.10f),
+            onSurfaceVariant = tone(lerp(0.72f, 0.88f, t), 0.10f),
             inverseSurface = tone(0.90f, 0.06f),
             inverseOnSurface = tone(0.16f, 0.08f),
-            outline = tone(0.55f, 0.12f),
-            outlineVariant = tone(0.28f, 0.10f),
-            surfaceBright = tone(0.24f, 0.10f),
-            surfaceDim = tone(0.08f, 0.08f),
+            outline = tone(lerp(0.46f, 0.68f, t), 0.12f),
+            outlineVariant = tone(lerp(0.32f, 0.22f, t), 0.10f),
+            surfaceBright = tone(lerp(0.26f, 0.20f, t), 0.10f),
+            surfaceDim = tone(lerp(0.10f, 0.05f, t), 0.08f),
             surfaceContainer = surfaceContainer,
             surfaceContainerHigh = surfaceContainerHigh,
             surfaceContainerHighest = surfaceContainerHighest,
             surfaceContainerLow = surfaceContainerLow,
-            surfaceContainerLowest = tone(0.06f, 0.06f),
+            surfaceContainerLowest = tone(lerp(0.08f, 0.03f, t), 0.06f),
             primaryFixed = tone(0.90f),
             primaryFixedDim = tone(0.80f),
             onPrimaryFixed = tone(0.12f),
@@ -130,18 +147,18 @@ private fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean): ColorScheme
             onSecondaryFixedVariant = secondary(0.28f),
         )
     } else {
-        val primary = tone(0.40f)
-        val primaryContainer = tone(0.90f)
-        val secondary = secondary(0.40f)
-        val secondaryContainer = secondary(0.90f)
-        val tertiary = tone(0.40f, (chroma * 0.55f).coerceAtMost(0.45f))
-        val tertiaryContainer = tone(0.90f, 0.18f)
-        val surface = tone(0.97f, 0.06f)
-        val surfaceContainer = tone(0.94f, 0.07f)
-        val surfaceContainerHigh = tone(0.92f, 0.08f)
-        val surfaceContainerHighest = tone(0.90f, 0.10f)
-        val surfaceContainerLow = tone(0.96f, 0.06f)
-        val onSurface = tone(0.12f, 0.18f)
+        val primary = tone(lerp(0.46f, 0.32f, t))
+        val primaryContainer = tone(lerp(0.92f, 0.86f, t))
+        val secondary = secondary(lerp(0.46f, 0.32f, t))
+        val secondaryContainer = secondary(lerp(0.92f, 0.86f, t))
+        val tertiary = tone(lerp(0.46f, 0.32f, t), (chroma * 0.55f).coerceAtMost(0.45f))
+        val tertiaryContainer = tone(lerp(0.92f, 0.86f, t), 0.18f)
+        val surface = tone(lerp(0.98f, 0.96f, t), 0.06f)
+        val surfaceContainer = tone(lerp(0.95f, 0.92f, t), 0.07f)
+        val surfaceContainerHigh = tone(lerp(0.93f, 0.90f, t), 0.08f)
+        val surfaceContainerHighest = tone(lerp(0.91f, 0.88f, t), 0.10f)
+        val surfaceContainerLow = tone(lerp(0.97f, 0.94f, t), 0.06f)
+        val onSurface = tone(lerp(0.24f, 0.08f, t), 0.18f)
         lightColorScheme(
             primary = primary,
             onPrimary = onTone(primary),
@@ -161,13 +178,13 @@ private fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean): ColorScheme
             surface = surface,
             onSurface = onSurface,
             surfaceVariant = surfaceContainerHighest,
-            onSurfaceVariant = tone(0.32f, 0.16f),
+            onSurfaceVariant = tone(lerp(0.42f, 0.22f, t), 0.16f),
             inverseSurface = tone(0.16f, 0.08f),
             inverseOnSurface = tone(0.92f, 0.06f),
-            outline = tone(0.50f, 0.12f),
-            outlineVariant = tone(0.82f, 0.10f),
+            outline = tone(lerp(0.64f, 0.38f, t), 0.12f),
+            outlineVariant = tone(lerp(0.86f, 0.74f, t), 0.10f),
             surfaceBright = tone(0.98f, 0.05f),
-            surfaceDim = tone(0.90f, 0.08f),
+            surfaceDim = tone(lerp(0.92f, 0.88f, t), 0.08f),
             surfaceContainer = surfaceContainer,
             surfaceContainerHigh = surfaceContainerHigh,
             surfaceContainerHighest = surfaceContainerHighest,

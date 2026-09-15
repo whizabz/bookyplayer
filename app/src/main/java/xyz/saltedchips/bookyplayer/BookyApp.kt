@@ -62,6 +62,7 @@ fun BookyApp(
 ) {
     val appearance by appearanceViewModel.mode.collectAsStateWithLifecycle()
     val colorTheme by appearanceViewModel.colorTheme.collectAsStateWithLifecycle()
+    val contrastPreference by appearanceViewModel.contrastPreference.collectAsStateWithLifecycle()
     val placeholderCover by appearanceViewModel.placeholderCover.collectAsStateWithLifecycle()
     val notificationsPrompted by appearanceViewModel.notificationsPrompted.collectAsStateWithLifecycle()
     val library by libraryViewModel.state.collectAsStateWithLifecycle()
@@ -152,6 +153,7 @@ fun BookyApp(
     BookyTheme(
         appearance = appearance,
         colorTheme = colorTheme,
+        contrastPreference = contrastPreference,
         book = player.book,
         placeholderCover = placeholderCover,
     ) {
@@ -263,6 +265,8 @@ fun BookyApp(
                             onAppearanceChange = appearanceViewModel::setMode,
                             colorTheme = colorTheme,
                             onColorThemeChange = appearanceViewModel::setColorTheme,
+                            contrastPreference = contrastPreference,
+                            onContrastPreferenceChange = appearanceViewModel::setContrastPreference,
                             skipBackSeconds = player.skipBackSeconds,
                             skipForwardSeconds = player.skipForwardSeconds,
                             onSkipBackSecondsChange = playerViewModel::setSkipBackSeconds,

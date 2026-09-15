@@ -15,6 +15,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.expressiveLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
@@ -25,6 +26,7 @@ import androidx.compose.ui.platform.LocalView
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.settings.AppearanceMode
 import xyz.saltedchips.bookyplayer.settings.ColorTheme
+import xyz.saltedchips.bookyplayer.settings.ContrastPreference
 import xyz.saltedchips.bookyplayer.settings.PlaceholderCoverStyle
 
 val LocalSystemColorScheme = compositionLocalOf { darkColorScheme() }
@@ -38,6 +40,7 @@ val BookyCoverText = Color(0xFFE8C9C4)
 fun BookyTheme(
     appearance: AppearanceMode = AppearanceMode.System,
     colorTheme: ColorTheme = ColorTheme.System,
+    contrastPreference: ContrastPreference = ContrastPreference.System,
     book: Audiobook? = null,
     placeholderCover: PlaceholderCoverStyle = PlaceholderCoverStyle.Default,
     content: @Composable () -> Unit,
@@ -50,16 +53,21 @@ fun BookyTheme(
     }
     val context = LocalContext.current
     val view = LocalView.current
+    val systemContrast = rememberSystemContrast()
+    val contrast = contrastPreference.contrastAmount(systemContrast)
     val systemScheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val wallpaper =
+                if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            wallpaper.adjustedForContrast(darkTheme, systemContrast, contrast)
         }
+        contrast >= 0.5f -> if (darkTheme) darkColorScheme() else lightColorScheme()
         darkTheme -> darkColorScheme()
         else -> expressiveLightColorScheme()
     }
     val targetScheme = when (colorTheme) {
         ColorTheme.System -> systemScheme
-        ColorTheme.Book -> rememberArtworkColorScheme(book, systemScheme, darkTheme)
+        ColorTheme.Book -> rememberArtworkColorScheme(book, systemScheme, darkTheme, contrast)
     }
     val colorScheme = animateColorSchemeAsState(targetScheme)
     SideEffect {

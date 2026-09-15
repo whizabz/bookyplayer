@@ -43,6 +43,7 @@ import xyz.saltedchips.bookyplayer.BuildConfig
 import xyz.saltedchips.bookyplayer.R
 import xyz.saltedchips.bookyplayer.settings.AppearanceMode
 import xyz.saltedchips.bookyplayer.settings.ColorTheme
+import xyz.saltedchips.bookyplayer.settings.ContrastPreference
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -52,6 +53,8 @@ fun SettingsScreen(
     onAppearanceChange: (AppearanceMode) -> Unit,
     colorTheme: ColorTheme = ColorTheme.System,
     onColorThemeChange: (ColorTheme) -> Unit = {},
+    contrastPreference: ContrastPreference = ContrastPreference.System,
+    onContrastPreferenceChange: (ContrastPreference) -> Unit = {},
     skipBackSeconds: Int = 10,
     skipForwardSeconds: Int = 10,
     onSkipBackSecondsChange: (Int) -> Unit = {},
@@ -222,6 +225,41 @@ fun SettingsScreen(
                                 },
                             ) {
                                 Text(theme.name, maxLines = 1)
+                            }
+                        }
+                    }
+                    ListItem(
+                        headlineContent = { Text("Contrast") },
+                        supportingContent = {
+                            Text("System follows the device colour contrast")
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    val contrasts = ContrastPreference.entries
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            ButtonGroupDefaults.ConnectedSpaceBetween,
+                        ),
+                    ) {
+                        contrasts.forEachIndexed { index, option ->
+                            ToggleButton(
+                                checked = contrastPreference == option,
+                                onCheckedChange = { checked ->
+                                    if (checked) onContrastPreferenceChange(option)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics { role = Role.RadioButton },
+                                shapes = when (index) {
+                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                    contrasts.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                },
+                            ) {
+                                Text(option.name, maxLines = 1)
                             }
                         }
                     }

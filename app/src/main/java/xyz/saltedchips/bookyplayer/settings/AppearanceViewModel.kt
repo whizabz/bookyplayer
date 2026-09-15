@@ -16,6 +16,13 @@ enum class ColorTheme {
     Book,
 }
 
+enum class ContrastPreference {
+    System,
+    Default,
+    Medium,
+    High,
+}
+
 class AppearanceViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("booky_prefs", 0)
 
@@ -30,6 +37,13 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         },
     )
     val colorTheme: StateFlow<ColorTheme> = _colorTheme
+
+    private val _contrastPreference = MutableStateFlow(
+        ContrastPreference.entries.getOrElse(
+            prefs.getInt(KEY_CONTRAST, ContrastPreference.System.ordinal),
+        ) { ContrastPreference.System },
+    )
+    val contrastPreference: StateFlow<ContrastPreference> = _contrastPreference
 
     private val _placeholderCover = MutableStateFlow(loadPlaceholderCover())
     val placeholderCover: StateFlow<PlaceholderCoverStyle> = _placeholderCover
@@ -55,6 +69,11 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
     fun setColorTheme(theme: ColorTheme) {
         prefs.edit().putInt(KEY_COLOR_THEME, theme.ordinal).apply()
         _colorTheme.value = theme
+    }
+
+    fun setContrastPreference(preference: ContrastPreference) {
+        prefs.edit().putInt(KEY_CONTRAST, preference.ordinal).apply()
+        _contrastPreference.value = preference
     }
 
     fun setPlaceholderCover(style: PlaceholderCoverStyle) {
@@ -95,6 +114,7 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         const val KEY_CIRCULAR_PROGRESS = "circular_library_progress"
         const val KEY_APPEARANCE = "appearance_mode"
         const val KEY_COLOR_THEME = "color_theme"
+        const val KEY_CONTRAST = "contrast_preference"
         const val KEY_PLACEHOLDER_SHAPE = "placeholder_cover_shape"
         const val KEY_PLACEHOLDER_FONT = "placeholder_cover_font"
         const val KEY_PLACEHOLDER_WEIGHT = "placeholder_cover_weight"
