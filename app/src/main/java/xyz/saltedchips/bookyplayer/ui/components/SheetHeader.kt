@@ -3,6 +3,7 @@ package xyz.saltedchips.bookyplayer.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -12,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 val SheetHeaderToContentPadding = 8.dp
+private val SheetHeaderMinHeight = 40.dp
 
 @Composable
 fun SheetHeader(
@@ -22,6 +24,7 @@ fun SheetHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = SheetHeaderMinHeight)
             .padding(start = 24.dp, end = if (action != null) 8.dp else 24.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,

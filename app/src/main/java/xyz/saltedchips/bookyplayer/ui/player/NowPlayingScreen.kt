@@ -1801,7 +1801,10 @@ private fun SleepOptionRow(
             .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(start = 16.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -1822,11 +1825,13 @@ private fun SleepStepper(
     onMinus: () -> Unit,
     onPlus: () -> Unit,
 ) {
-    ButtonGroup(
-        overflowIndicator = {},
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        ButtonGroup(
+            overflowIndicator = {},
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.height(40.dp),
+        ) {
         customItem(
             buttonGroupContent = {
                 val interactionSource = remember { MutableInteractionSource() }
@@ -1885,6 +1890,7 @@ private fun SleepStepper(
                 )
             },
         )
+        }
     }
 }
 
