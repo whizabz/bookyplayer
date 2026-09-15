@@ -1,17 +1,9 @@
 package xyz.saltedchips.bookyplayer.ui.components
 
 import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.rememberTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -19,12 +11,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CancellationException
+import xyz.saltedchips.bookyplayer.theme.overlayEnter
+import xyz.saltedchips.bookyplayer.theme.overlayExit
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -78,12 +72,8 @@ fun PredictiveBackOverlay(
     transition.AnimatedVisibility(
         visible = { it },
         modifier = modifier.fillMaxSize(),
-        enter = fadeIn(motion.defaultEffectsSpec()) +
-            slideInHorizontally(motion.defaultSpatialSpec()) { it / 8 } +
-            scaleIn(motion.defaultSpatialSpec(), initialScale = 0.92f),
-        exit = fadeOut(tween(durationMillis = 220, easing = LinearEasing), targetAlpha = 0.92f) +
-            scaleOut(tween(durationMillis = 220, easing = LinearEasing), targetScale = 0.9f) +
-            slideOutHorizontally(tween(durationMillis = 220, easing = LinearEasing)) { it / 14 },
+        enter = motion.overlayEnter(),
+        exit = motion.overlayExit(),
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
