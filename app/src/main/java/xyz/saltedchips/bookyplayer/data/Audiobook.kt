@@ -25,6 +25,11 @@ data class Audiobook(
     val lastPlayedMs: Long = 0L,
 )
 
+fun Audiobook.chapterTotal(): Int {
+    return maxOf(chapterTitles.size, chapterDurationsMs.size, chapterStartMs.size, chapterCount)
+        .coerceAtLeast(1)
+}
+
 fun Audiobook.sourceLabel(): String {
     val files = fileCount.takeIf { it > 0 } ?: mediaUris.size.coerceAtLeast(1)
     val chapters = chapterCount.takeIf { it > 0 }

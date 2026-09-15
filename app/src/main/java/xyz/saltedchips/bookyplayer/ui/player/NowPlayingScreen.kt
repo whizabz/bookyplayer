@@ -1,6 +1,7 @@
 package xyz.saltedchips.bookyplayer.ui.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Animatable
@@ -64,11 +65,10 @@ import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -126,11 +126,14 @@ import androidx.compose.ui.unit.round
 import androidx.compose.ui.util.lerp as lerpFloat
 import xyz.saltedchips.bookyplayer.data.formatClock
 import xyz.saltedchips.bookyplayer.data.formatMinutes
+import xyz.saltedchips.bookyplayer.data.chapterTotal
 import xyz.saltedchips.bookyplayer.player.ChapterMarksSnapshot
 import xyz.saltedchips.bookyplayer.player.PlayerUiState
 import xyz.saltedchips.bookyplayer.player.SleepTimer
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
+import xyz.saltedchips.bookyplayer.ui.components.SheetHeader
+import xyz.saltedchips.bookyplayer.ui.components.SheetHeaderToContentPadding
 import xyz.saltedchips.bookyplayer.ui.components.MarkPreviousChaptersDialog
 import xyz.saltedchips.bookyplayer.ui.components.SwipeableChapterRow
 import xyz.saltedchips.bookyplayer.ui.components.chapterListenProgress
@@ -428,8 +431,8 @@ fun NowPlayingScreen(
             shadowElevation = 0.dp,
             tonalElevation = 0.dp,
             border = BorderStroke(
-                width = 1.dp,
-                color = colors.secondaryContainer.copy(alpha = collapseProgress),
+                width = 0.5.dp,
+                color = colors.secondaryContainer.copy(alpha = 0.45f * collapseProgress),
             ),
         ) {
             NowPlayingContent(
@@ -1160,7 +1163,7 @@ private fun NowPlayingContent(
         if (showSleep) {
             SleepSheet(
                 timer = player.sleepTimer,
-                remainingChapters = (book.chapterTitles.size - player.currentChapterIndex)
+                remainingChapters = (book.chapterTotal() - player.currentChapterIndex)
                     .coerceAtLeast(1),
                 onSetTimer = onSetSleepTimer,
                 onDismiss = { showSleep = false },
@@ -1551,36 +1554,36 @@ private fun SpeedSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Playback speed",
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                TextButton(
-                    onClick = { onSetSpeed(1f) },
-                    enabled = speed != 1f,
-                ) {
-                    Text("Reset")
-                }
-            }
+            SheetHeader(
+                title = "Playback speed",
+                action = {
+                    TextButton(
+                        onClick = { onSetSpeed(1f) },
+                        enabled = speed != 1f,
+                    ) {
+                        Text("Reset")
+                    }
+                },
+            )
             Text(
                 text = formatSpeed(speed),
                 style = MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+                modifier = Modifier.padding(
+                    start = 24.dp,
+                    end = 24.dp,
+                    top = SheetHeaderToContentPadding,
+                    bottom = 20.dp,
+                ),
             )
             Slider(
                 value = speed.coerceIn(SpeedMin, SpeedMax),
                 onValueChange = onSetSpeed,
                 valueRange = SpeedMin..SpeedMax,
                 steps = SpeedSteps,
+                modifier = Modifier.padding(horizontal = 24.dp),
                 track = { sliderState ->
                     SliderDefaults.Track(
                         sliderState = sliderState,
@@ -1606,7 +1609,9 @@ private fun SpeedSheet(
                 },
             )
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1635,7 +1640,13 @@ private const val SleepCustomStepMinutes = 5
 private const val SleepCustomMinMinutes = 5
 private const val SleepCustomMaxMinutes = 180
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun sleepChapterOptionLabel(count: Int, remaining: Int): String = when {
+    remaining <= 1 || count >= remaining -> "End of book"
+    count <= 1 -> "End of this chapter"
+    else -> "In $count chapters"
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SleepSheet(
     timer: SleepTimer?,
@@ -1651,112 +1662,159 @@ private fun SleepSheet(
                 ?: 10,
         )
     }
-    var chapterCount by remember {
-        mutableIntStateOf((timer as? SleepTimer.EndOfChapters)?.chapters ?: 1)
-    }
     val maxChapters = remainingChapters.coerceAtLeast(1)
+    var chapterCount by remember {
+        mutableIntStateOf(
+            (timer as? SleepTimer.EndOfChapters)?.chapters?.coerceIn(1, maxChapters) ?: 1,
+        )
+    }
+    if (chapterCount > maxChapters) chapterCount = maxChapters
+    val itemCount = SleepPresetsMinutes.size + 2
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        Text(
-            text = "Sleep timer",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        )
-        SleepPresetsMinutes.forEachIndexed { index, minutes ->
-            val option = SleepTimer.Minutes(minutes)
-            SleepOptionRow(
-                title = if (minutes == 60) "1 hour" else "$minutes minutes",
-                selected = timer == option,
-                onClick = {
-                    if (timer == option) onSetTimer(null) else onSetTimer(option)
+        Column(Modifier.fillMaxWidth()) {
+            SheetHeader(
+                title = "Sleep timer",
+                action = {
+                    TextButton(
+                        onClick = { onSetTimer(null) },
+                        enabled = timer != null,
+                    ) {
+                        Text("Cancel timer")
+                    }
                 },
-                showDivider = index > 0,
             )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = SheetHeaderToContentPadding,
+                        bottom = 24.dp,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                SleepPresetsMinutes.forEachIndexed { index, minutes ->
+                    val option = SleepTimer.Minutes(minutes)
+                    SleepOptionRow(
+                        title = if (minutes == 60) "1 hour" else "$minutes minutes",
+                        selected = timer == option,
+                        onClick = {
+                            if (timer == option) onSetTimer(null) else onSetTimer(option)
+                        },
+                        itemShapes = ListItemDefaults.segmentedShapes(
+                            index = index,
+                            count = itemCount,
+                        ),
+                    )
+                }
+                SleepOptionRow(
+                    title = "$customMinutes minutes",
+                    selected = timer is SleepTimer.Minutes && timer.minutes == customMinutes &&
+                        customMinutes !in SleepPresetsMinutes,
+                    onClick = {
+                        val option = SleepTimer.Minutes(customMinutes)
+                        if (timer == option) onSetTimer(null) else onSetTimer(option)
+                    },
+                    itemShapes = ListItemDefaults.segmentedShapes(
+                        index = SleepPresetsMinutes.size,
+                        count = itemCount,
+                    ),
+                    trailing = {
+                        SleepStepper(
+                            minusEnabled = customMinutes > SleepCustomMinMinutes,
+                            plusEnabled = customMinutes < SleepCustomMaxMinutes,
+                            onMinus = {
+                                customMinutes = (customMinutes - SleepCustomStepMinutes)
+                                    .coerceAtLeast(SleepCustomMinMinutes)
+                                onSetTimer(SleepTimer.Minutes(customMinutes))
+                            },
+                            onPlus = {
+                                customMinutes = (customMinutes + SleepCustomStepMinutes)
+                                    .coerceAtMost(SleepCustomMaxMinutes)
+                                onSetTimer(SleepTimer.Minutes(customMinutes))
+                            },
+                        )
+                    },
+                )
+                SleepOptionRow(
+                    title = sleepChapterOptionLabel(chapterCount, maxChapters),
+                    selected = timer is SleepTimer.EndOfChapters,
+                    onClick = {
+                        val option = SleepTimer.EndOfChapters(chapterCount)
+                        if (timer == option) onSetTimer(null) else onSetTimer(option)
+                    },
+                    itemShapes = ListItemDefaults.segmentedShapes(
+                        index = SleepPresetsMinutes.size + 1,
+                        count = itemCount,
+                    ),
+                    trailing = if (maxChapters > 1) {
+                        {
+                            SleepStepper(
+                                minusEnabled = chapterCount > 1,
+                                plusEnabled = chapterCount < maxChapters,
+                                onMinus = {
+                                    chapterCount = (chapterCount - 1).coerceAtLeast(1)
+                                    onSetTimer(SleepTimer.EndOfChapters(chapterCount))
+                                },
+                                onPlus = {
+                                    chapterCount = (chapterCount + 1).coerceAtMost(maxChapters)
+                                    onSetTimer(SleepTimer.EndOfChapters(chapterCount))
+                                },
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
         }
-        SleepOptionRow(
-            title = "$customMinutes minutes",
-            selected = timer is SleepTimer.Minutes && timer.minutes == customMinutes &&
-                customMinutes !in SleepPresetsMinutes,
-            onClick = {
-                val option = SleepTimer.Minutes(customMinutes)
-                if (timer == option) onSetTimer(null) else onSetTimer(option)
-            },
-            showDivider = true,
-            trailing = {
-                SleepStepper(
-                    minusEnabled = customMinutes > SleepCustomMinMinutes,
-                    plusEnabled = customMinutes < SleepCustomMaxMinutes,
-                    onMinus = {
-                        customMinutes = (customMinutes - SleepCustomStepMinutes)
-                            .coerceAtLeast(SleepCustomMinMinutes)
-                        onSetTimer(SleepTimer.Minutes(customMinutes))
-                    },
-                    onPlus = {
-                        customMinutes = (customMinutes + SleepCustomStepMinutes)
-                            .coerceAtMost(SleepCustomMaxMinutes)
-                        onSetTimer(SleepTimer.Minutes(customMinutes))
-                    },
-                )
-            },
-        )
-        SleepOptionRow(
-            title = if (chapterCount == 1) "End of chapter" else "In $chapterCount chapters",
-            selected = timer is SleepTimer.EndOfChapters,
-            onClick = {
-                val option = SleepTimer.EndOfChapters(chapterCount)
-                if (timer == option) onSetTimer(null) else onSetTimer(option)
-            },
-            showDivider = true,
-            trailing = {
-                SleepStepper(
-                    minusEnabled = chapterCount > 1,
-                    plusEnabled = chapterCount < maxChapters,
-                    onMinus = {
-                        chapterCount = (chapterCount - 1).coerceAtLeast(1)
-                        onSetTimer(SleepTimer.EndOfChapters(chapterCount))
-                    },
-                    onPlus = {
-                        chapterCount = (chapterCount + 1).coerceAtMost(maxChapters)
-                        onSetTimer(SleepTimer.EndOfChapters(chapterCount))
-                    },
-                )
-            },
-        )
-        Spacer(Modifier.height(24.dp))
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SleepOptionRow(
     title: String,
     selected: Boolean,
     onClick: () -> Unit,
-    showDivider: Boolean,
+    itemShapes: ListItemShapes,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Column {
-        if (showDivider) {
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colors.outlineVariant.copy(alpha = 0.6f),
+    val scheme = MaterialTheme.colorScheme
+    val motion = MaterialTheme.motionScheme
+    val container by animateColorAsState(
+        targetValue = if (selected) scheme.secondaryContainer else scheme.surfaceContainer,
+        animationSpec = motion.defaultEffectsSpec(),
+        label = "sleep-row-container",
+    )
+    Surface(
+        shape = itemShapes.shape,
+        color = container,
+        contentColor = if (selected) scheme.onSecondaryContainer else scheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(itemShapes.shape)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
             )
+            trailing?.invoke()
         }
-        ListItem(
-            headlineContent = { Text(title) },
-            trailingContent = trailing,
-            colors = ListItemDefaults.colors(
-                containerColor = if (selected) colors.surfaceContainerHigh else Color.Transparent,
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick),
-        )
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SleepStepper(
     minusEnabled: Boolean,
@@ -1764,21 +1822,69 @@ private fun SleepStepper(
     onMinus: () -> Unit,
     onPlus: () -> Unit,
 ) {
-    Row {
-        FilledTonalIconButton(
-            onClick = onMinus,
-            enabled = minusEnabled,
-            modifier = Modifier.size(40.dp),
-        ) {
-            Text("−")
-        }
-        FilledTonalIconButton(
-            onClick = onPlus,
-            enabled = plusEnabled,
-            modifier = Modifier.size(40.dp),
-        ) {
-            Text("+")
-        }
+    ButtonGroup(
+        overflowIndicator = {},
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        customItem(
+            buttonGroupContent = {
+                val interactionSource = remember { MutableInteractionSource() }
+                FilledTonalIconButton(
+                    onClick = onMinus,
+                    enabled = minusEnabled,
+                    shapes = IconButtonDefaults.shapes(
+                        shape = ButtonGroupDefaults.connectedLeadingButtonShape,
+                        pressedShape = ButtonGroupDefaults.connectedLeadingButtonPressShape,
+                    ),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .animateWidth(interactionSource),
+                    interactionSource = interactionSource,
+                ) {
+                    Text("−")
+                }
+            },
+            menuContent = { menuState ->
+                DropdownMenuItem(
+                    text = { Text("Decrease") },
+                    enabled = minusEnabled,
+                    onClick = {
+                        onMinus()
+                        menuState.dismiss()
+                    },
+                )
+            },
+        )
+        customItem(
+            buttonGroupContent = {
+                val interactionSource = remember { MutableInteractionSource() }
+                FilledTonalIconButton(
+                    onClick = onPlus,
+                    enabled = plusEnabled,
+                    shapes = IconButtonDefaults.shapes(
+                        shape = ButtonGroupDefaults.connectedTrailingButtonShape,
+                        pressedShape = ButtonGroupDefaults.connectedTrailingButtonPressShape,
+                    ),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .animateWidth(interactionSource),
+                    interactionSource = interactionSource,
+                ) {
+                    Text("+")
+                }
+            },
+            menuContent = { menuState ->
+                DropdownMenuItem(
+                    text = { Text("Increase") },
+                    enabled = plusEnabled,
+                    onClick = {
+                        onPlus()
+                        menuState.dismiss()
+                    },
+                )
+            },
+        )
     }
 }
 
@@ -1842,14 +1948,15 @@ private fun ChapterListSheet(
     ) {
         Box(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Chapters",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
+                SheetHeader(title = "Chapters")
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = SheetHeaderToContentPadding,
+                        bottom = 24.dp,
+                    ),
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                 ) {
                     itemsIndexed(titles) { index, title ->

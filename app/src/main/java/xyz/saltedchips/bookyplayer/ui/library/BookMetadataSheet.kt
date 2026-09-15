@@ -7,7 +7,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,6 +43,8 @@ import xyz.saltedchips.bookyplayer.data.formatDuration
 import xyz.saltedchips.bookyplayer.data.sourceLabel
 import xyz.saltedchips.bookyplayer.library.CoverImages
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
+import xyz.saltedchips.bookyplayer.ui.components.SheetHeader
+import xyz.saltedchips.bookyplayer.ui.components.SheetHeaderToContentPadding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -97,19 +98,21 @@ fun BookMetadataSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp),
         ) {
+            SheetHeader(
+                title = "Edit book",
+                action = {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                },
+            )
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Edit book", style = MaterialTheme.typography.titleLarge)
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-            Row(
-                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                modifier = Modifier.padding(
+                    start = 24.dp,
+                    end = 24.dp,
+                    top = SheetHeaderToContentPadding,
+                    bottom = 8.dp,
+                ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val openPicker = {
@@ -152,6 +155,11 @@ fun BookMetadataSheet(
                     }
                 }
             }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+            ) {
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
@@ -186,6 +194,7 @@ fun BookMetadataSheet(
                     .padding(top = 16.dp),
             ) {
                 Text("Save")
+            }
             }
         }
     }
