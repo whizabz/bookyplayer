@@ -3,10 +3,12 @@ package xyz.saltedchips.bookyplayer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.SeekableTransitionState
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,6 +50,7 @@ import xyz.saltedchips.bookyplayer.ui.library.LibraryScreen
 import xyz.saltedchips.bookyplayer.ui.player.NowPlayingScreen
 import xyz.saltedchips.bookyplayer.ui.settings.PlaceholderCoverScreen
 import xyz.saltedchips.bookyplayer.ui.settings.SettingsScreen
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -157,11 +160,6 @@ fun BookyApp(
         var detailBookId by rememberSaveable { mutableStateOf<String?>(null) }
         var nowPlaying by rememberSaveable { mutableStateOf(false) }
         val canvas = MaterialTheme.colorScheme.background
-        BackHandler(enabled = showingPlaceholderCover) { showingPlaceholderCover = false }
-        BackHandler(enabled = showingSettings && !showingPlaceholderCover) {
-            showingSettings = false
-        }
-        BackHandler(enabled = detailBookId != null && !showingSettings) { detailBookId = null }
         val miniPlayerClearance =
             if (player.book != null && !showingSettings && !showingPlaceholderCover) {
                 104.dp
@@ -205,9 +203,38 @@ fun BookyApp(
                     detailBook != null -> AppRoute.Details
                     else -> AppRoute.Library
                 }
+                val backTarget = when (route) {
+                    AppRoute.Placeholder -> AppRoute.Settings
+                    AppRoute.Settings -> if (detailBookId != null) AppRoute.Details else AppRoute.Library
+                    AppRoute.Details -> AppRoute.Library
+                    AppRoute.Library -> null
+                }
+                val transitionState = remember { SeekableTransitionState(route) }
+                val transition = rememberTransition(transitionState, label = "main-pane")
+                LaunchedEffect(route) {
+                    if (transitionState.currentState != route) {
+                        transitionState.animateTo(route)
+                    }
+                }
+                PredictiveBackHandler(enabled = backTarget != null) { events ->
+                    val dest = backTarget ?: return@PredictiveBackHandler
+                    try {
+                        events.collect { event ->
+                            transitionState.seekTo(event.progress, dest)
+                        }
+                        transitionState.snapTo(dest)
+                        when {
+                            showingPlaceholderCover -> showingPlaceholderCover = false
+                            showingSettings -> showingSettings = false
+                            detailBookId != null -> detailBookId = null
+                        }
+                    } catch (e: CancellationException) {
+                        transitionState.animateTo(route)
+                        throw e
+                    }
+                }
                 val motion = MaterialTheme.motionScheme
-                AnimatedContent(
-                    targetState = route,
+                transition.AnimatedContent(
                     modifier = Modifier.fillMaxSize(),
                     transitionSpec = {
                         when {
@@ -221,7 +248,6 @@ fun BookyApp(
                     contentKey = { pane ->
                         if (pane == AppRoute.Details) "details-${detailBookId.orEmpty()}" else pane.name
                     },
-                    label = "main-pane",
                 ) { pane ->
                     when (pane) {
                         AppRoute.Placeholder -> PlaceholderCoverScreen(
