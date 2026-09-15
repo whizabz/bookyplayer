@@ -53,6 +53,7 @@ import androidx.glance.text.TextStyle
 import xyz.saltedchips.bookyplayer.MainActivity
 import xyz.saltedchips.bookyplayer.R
 import xyz.saltedchips.bookyplayer.player.PlaybackService
+import xyz.saltedchips.bookyplayer.player.WidgetCommandAuth
 
 open class NowPlayingWidget : GlanceAppWidget() {
     override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
@@ -460,7 +461,9 @@ private fun CoverImage(snapshot: NowPlayingSnapshot, modifier: GlanceModifier) {
 private fun widgetServiceAction(action: String): Action {
     val context = LocalContext.current
     return actionStartService(
-        Intent(context, PlaybackService::class.java).setAction(action),
+        Intent(context, PlaybackService::class.java)
+            .setAction(action)
+            .putExtra(WidgetCommandAuth.EXTRA_TOKEN, WidgetCommandAuth.token(context)),
         isForegroundService = true,
     )
 }

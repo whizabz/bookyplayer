@@ -150,15 +150,18 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+        if (!TrustedMediaClients.allows(controllerInfo.packageName, packageName)) return null
         return session
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val result = super.onStartCommand(intent, flags, startId)
-        when (intent?.action) {
-            ACTION_WIDGET_PLAY_PAUSE -> handleWidgetPlayPause()
-            ACTION_WIDGET_SEEK_BACK -> player?.seekBack()
-            ACTION_WIDGET_SEEK_FORWARD -> player?.seekForward()
+        if (WidgetCommandAuth.matches(this, intent)) {
+            when (intent?.action) {
+                ACTION_WIDGET_PLAY_PAUSE -> handleWidgetPlayPause()
+                ACTION_WIDGET_SEEK_BACK -> player?.seekBack()
+                ACTION_WIDGET_SEEK_FORWARD -> player?.seekForward()
+            }
         }
         return result
     }
@@ -282,6 +285,9 @@ class PlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
+            if (!TrustedMediaClients.allows(controller.packageName, packageName)) {
+                return MediaSession.ConnectionResult.reject()
+            }
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(SessionCommand(COMMAND_REPEAT, android.os.Bundle.EMPTY))
                 .build()
@@ -351,7 +357,7 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
-            val resolved = resolve(mediaItems) ?: return Futures.immediateFuture(mediaItems)
+            val resolved = resolve(mediaItems) ?: return Futures.immediateFuture(mutableListOf())
             applyPlaybackPrefs()
             return Futures.immediateFuture(resolved.mediaItems.toMutableList())
         }
@@ -363,19 +369,22 @@ class PlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            if (mediaItems.size > 1) {
-                val items = resolve(mediaItems)?.mediaItems ?: mediaItems
-                applyPlaybackPrefs()
-                return Futures.immediateFuture(
-                    MediaSession.MediaItemsWithStartPosition(items, startIndex, startPositionMs),
-                )
-            }
             val resolved = resolve(mediaItems)
                 ?: return Futures.immediateFuture(
-                    MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs),
+                    MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0L),
                 )
             applyPlaybackPrefs()
-            return Futures.immediateFuture(resolved)
+            return if (mediaItems.size > 1) {
+                Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(
+                        resolved.mediaItems,
+                        startIndex,
+                        startPositionMs,
+                    ),
+                )
+            } else {
+                Futures.immediateFuture(resolved)
+            }
         }
 
         override fun onPlaybackResumption(
