@@ -101,6 +101,7 @@ fun LibraryScreen(
     onChooseFolder: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     bottomContentPadding: Dp = 24.dp,
+    selectionBackEnabled: Boolean = true,
 ) {
     var sortMenu by remember { mutableStateOf(false) }
     var selecting by rememberSaveable { mutableStateOf(false) }
@@ -110,7 +111,7 @@ fun LibraryScreen(
     var editingBook by remember { mutableStateOf<Audiobook?>(null) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val selectedBooks = books.filter { it.id in selectedIds }
-    BackHandler(enabled = selecting) {
+    BackHandler(enabled = selecting && selectionBackEnabled) {
         selecting = false
         selectedIds = emptySet()
         revealedId = null

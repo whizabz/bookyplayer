@@ -3,12 +3,8 @@ package xyz.saltedchips.bookyplayer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.SeekableTransitionState
-import androidx.compose.animation.core.rememberTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -37,21 +34,19 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
+import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.library.LibraryViewModel
 import xyz.saltedchips.bookyplayer.library.PersistableOpenDocumentTree
 import xyz.saltedchips.bookyplayer.player.PlayerViewModel
 import xyz.saltedchips.bookyplayer.settings.AppearanceViewModel
 import xyz.saltedchips.bookyplayer.theme.BookyTheme
-import xyz.saltedchips.bookyplayer.theme.expressiveFadeTransform
-import xyz.saltedchips.bookyplayer.theme.expressiveStackTransform
-import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.ui.components.PredictiveBackOverlay
 import xyz.saltedchips.bookyplayer.ui.library.BookDetailScreen
 import xyz.saltedchips.bookyplayer.ui.library.LibraryScreen
 import xyz.saltedchips.bookyplayer.ui.player.NowPlayingScreen
 import xyz.saltedchips.bookyplayer.ui.settings.PlaceholderCoverScreen
 import xyz.saltedchips.bookyplayer.ui.settings.SettingsScreen
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -162,12 +157,8 @@ fun BookyApp(
         var detailBookId by rememberSaveable { mutableStateOf<String?>(null) }
         var nowPlaying by rememberSaveable { mutableStateOf(false) }
         val canvas = MaterialTheme.colorScheme.background
-        val miniPlayerClearance =
-            if (player.book != null && !showingSettings && !showingPlaceholderCover) {
-                104.dp
-            } else {
-                0.dp
-            }
+        val miniPlayerClearance = if (player.book != null) 104.dp else 0.dp
+        var cachedDetailBook by remember { mutableStateOf<Audiobook?>(null) }
         val playBook: (Audiobook) -> Unit = { book ->
             if (player.book?.id == book.id && player.isPlaying) {
                 playerViewModel.togglePlay()
@@ -186,6 +177,11 @@ fun BookyApp(
                 detailBookId = null
             }
         }
+        val detailBook = library.books.find { it.id == detailBookId }
+        if (detailBook != null) cachedDetailBook = detailBook
+        val overlayBook = detailBook ?: cachedDetailBook
+        val libraryCovered = detailBookId != null || showingSettings || showingPlaceholderCover
+        val detailsCovered = showingSettings || showingPlaceholderCover
 
         Box(Modifier.fillMaxSize()) {
             Scaffold(
@@ -198,233 +194,142 @@ fun BookyApp(
                 val screenModifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                val detailBook = library.books.find { it.id == detailBookId }
-                val route = when {
-                    showingPlaceholderCover -> AppRoute.Placeholder
-                    showingSettings -> AppRoute.Settings
-                    detailBook != null -> AppRoute.Details
-                    else -> AppRoute.Library
-                }
-                val backTarget = when (route) {
-                    AppRoute.Placeholder -> AppRoute.Settings
-                    AppRoute.Settings -> if (detailBookId != null) AppRoute.Details else AppRoute.Library
-                    AppRoute.Details -> AppRoute.Library
-                    AppRoute.Library -> null
-                }
-                val transitionState = remember { SeekableTransitionState(route) }
-                val transition = rememberTransition(transitionState, label = "main-pane")
-                LaunchedEffect(route) {
-                    if (transitionState.currentState != route) {
-                        transitionState.animateTo(route)
-                    }
-                }
-                PredictiveBackHandler(enabled = backTarget != null) { events ->
-                    val dest = backTarget ?: return@PredictiveBackHandler
-                    try {
-                        events.collect { event ->
-                            transitionState.seekTo(event.progress, dest)
-                        }
-                        transitionState.snapTo(dest)
-                        when {
-                            showingPlaceholderCover -> showingPlaceholderCover = false
-                            showingSettings -> showingSettings = false
-                            detailBookId != null -> detailBookId = null
-                        }
-                    } catch (e: CancellationException) {
-                        transitionState.animateTo(route)
-                        throw e
-                    }
-                }
-                val motion = MaterialTheme.motionScheme
-                transition.AnimatedContent(
-                    modifier = Modifier.fillMaxSize(),
-                    transitionSpec = {
-                        when {
-                            targetState.rank > initialState.rank ->
-                                motion.expressiveStackTransform(forward = true)
-                            targetState.rank < initialState.rank ->
-                                motion.expressiveStackTransform(forward = false)
-                            else -> motion.expressiveFadeTransform()
-                        }
-                    },
-                    contentKey = { pane ->
-                        if (pane == AppRoute.Details) "details-${detailBookId.orEmpty()}" else pane.name
-                    },
-                ) { pane ->
-                    when (pane) {
-                        AppRoute.Placeholder -> PlaceholderCoverScreen(
-                            style = placeholderCover,
-                            previewTitle = player.book?.title ?: "Pride and Prejudice",
-                            onStyleChange = appearanceViewModel::setPlaceholderCover,
-                            onBack = { showingPlaceholderCover = false },
-                            bottomContentPadding = miniPlayerClearance,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        AppRoute.Settings -> SettingsScreen(
-                            appearance = appearance,
-                            onAppearanceChange = appearanceViewModel::setMode,
-                            colorTheme = colorTheme,
-                            onColorThemeChange = appearanceViewModel::setColorTheme,
-                            contrastPreference = contrastPreference,
-                            onContrastPreferenceChange = appearanceViewModel::setContrastPreference,
-                            skipBackSeconds = player.skipBackSeconds,
-                            skipForwardSeconds = player.skipForwardSeconds,
-                            onSkipBackSecondsChange = playerViewModel::setSkipBackSeconds,
-                            onSkipForwardSecondsChange = playerViewModel::setSkipForwardSeconds,
-                            smartResumeEnabled = player.smartResumeEnabled,
-                            smartResumeSeconds = player.smartResumeSeconds,
-                            onSmartResumeEnabledChange = playerViewModel::setSmartResumeEnabled,
-                            onSmartResumeSecondsChange = playerViewModel::setSmartResumeSeconds,
-                            folderPath = library.folderPath,
-                            onChooseFolder = { pickFolder.launch(null) },
-                            playbackNotificationsEnabled = if (Build.VERSION.SDK_INT >= 33) {
-                                notificationsEnabled
-                            } else {
-                                null
-                            },
-                            onPlaybackNotificationsClick = {
-                                if (Build.VERSION.SDK_INT >= 33 &&
-                                    !playbackNotificationsGranted(context)
-                                ) {
-                                    notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            },
-                            onOpenPlaceholderCover = { showingPlaceholderCover = true },
-                            onBack = {
-                                showingPlaceholderCover = false
-                                showingSettings = false
-                            },
-                            bottomContentPadding = miniPlayerClearance,
-                            modifier = screenModifier,
-                        )
-                        AppRoute.Details -> {
-                            val book = detailBook
-                            if (book == null) {
-                                Box(Modifier.fillMaxSize())
-                            } else {
-                                BookDetailScreen(
-                                    book = book,
-                                    player = player,
-                                    savedChapterProgress = playerViewModel.peekChapterProgress(book.id),
-                                    completedChapters = playerViewModel.peekCompletedChapters(book),
-                                    onPlay = { playBook(book) },
-                                    onPlayChapter = { index ->
-                                        withPlaybackReady {
-                                            playerViewModel.playFromChapter(book, index)
-                                        }
-                                    },
-                                    onSetChaptersPlayed = { indices, played ->
-                                        val position = playerViewModel.setChaptersPlayed(
-                                            book.id,
-                                            indices,
-                                            played,
-                                        )
-                                        libraryViewModel.setListened(book.id, position)
-                                    },
-                                    onSnapshotMarks = { playerViewModel.snapshotChapterMarks(book.id) },
-                                    onRestoreMarks = { snapshot ->
-                                        val position = playerViewModel.restoreChapterMarks(book.id, snapshot)
-                                        libraryViewModel.setListened(book.id, position)
-                                    },
-                                    onUpdateMetadata = { title, author, narrator, chapters, cover ->
-                                        libraryViewModel.updateMetadata(
-                                            book.id,
-                                            title,
-                                            author,
-                                            narrator,
-                                            chapters,
-                                            cover,
-                                        )
-                                        libraryViewModel.state.value.books
-                                            .find { it.id == book.id }
-                                            ?.let(playerViewModel::patchDisplayedBook)
-                                    },
-                                    onDelete = {
-                                        if (player.book?.id == book.id) {
-                                            nowPlaying = false
-                                            playerViewModel.closeBook()
-                                        }
-                                        libraryViewModel.delete(listOf(book.id))
-                                        detailBookId = null
-                                    },
-                                    onMarkPlayed = {
-                                        libraryViewModel.markPlayed(listOf(book.id))
-                                        if (player.book?.id == book.id) {
-                                            playerViewModel.markBookPlayed()
-                                        }
-                                    },
-                                    onResetProgress = {
-                                        playerViewModel.resetBookProgress(book.id)
-                                        libraryViewModel.setListened(book.id, 0L)
-                                    },
-                                    onBack = { detailBookId = null },
-                                    bottomContentPadding = 24.dp + miniPlayerClearance,
-                                    modifier = screenModifier,
-                                )
+                Box(Modifier.fillMaxSize()) {
+                    LibraryScreen(
+                        books = library.books,
+                        activeBookId = player.book?.id,
+                        isPlaying = player.isPlaying,
+                        playbackProgress = if (player.bookDurationMs == 0L) {
+                            0f
+                        } else {
+                            (player.bookPositionMs.toFloat() / player.bookDurationMs)
+                                .coerceIn(0f, 1f)
+                        },
+                        hasFolder = library.folderUri != null,
+                        folderName = library.folderName,
+                        scanning = library.scanning,
+                        scanDone = library.scanDone,
+                        scanTotal = library.scanTotal,
+                        scanLabel = library.scanLabel,
+                        sort = library.sort,
+                        onSortChange = libraryViewModel::setSort,
+                        onMarkPlayed = { books ->
+                            libraryViewModel.markPlayed(books.map { it.id })
+                            if (books.any { it.id == player.book?.id }) {
+                                playerViewModel.markBookPlayed()
                             }
+                        },
+                        onDelete = { books ->
+                            val ids = books.map { it.id }
+                            if (detailBookId in ids) detailBookId = null
+                            if (player.book?.id in ids) {
+                                nowPlaying = false
+                                playerViewModel.closeBook()
+                            }
+                            libraryViewModel.delete(ids)
+                        },
+                        onUpdateMetadata = { id, title, author, narrator, chapters, cover ->
+                            libraryViewModel.updateMetadata(
+                                id,
+                                title,
+                                author,
+                                narrator,
+                                chapters,
+                                cover,
+                            )
+                            libraryViewModel.state.value.books
+                                .find { it.id == id }
+                                ?.let(playerViewModel::patchDisplayedBook)
+                        },
+                        onChooseFolder = { pickFolder.launch(null) },
+                        onOpenBook = { opened -> detailBookId = opened.id },
+                        onPlayBook = playBook,
+                        onOpenSettings = { showingSettings = true },
+                        bottomContentPadding = 24.dp + miniPlayerClearance,
+                        selectionBackEnabled = !libraryCovered,
+                        modifier = if (libraryCovered) {
+                            screenModifier.clearAndSetSemantics { }
+                        } else {
+                            screenModifier
+                        },
+                    )
+                    PredictiveBackOverlay(
+                        visible = overlayBook != null && detailBookId != null,
+                        onDismiss = { detailBookId = null },
+                        interceptBack = detailBookId != null && !detailsCovered,
+                    ) {
+                        val book = overlayBook
+                        if (book != null) {
+                            BookDetailScreen(
+                                book = book,
+                                player = player,
+                                savedChapterProgress = playerViewModel.peekChapterProgress(book.id),
+                                completedChapters = playerViewModel.peekCompletedChapters(book),
+                                onPlay = { playBook(book) },
+                                onPlayChapter = { index ->
+                                    withPlaybackReady {
+                                        playerViewModel.playFromChapter(book, index)
+                                    }
+                                },
+                                onSetChaptersPlayed = { indices, played ->
+                                    val position = playerViewModel.setChaptersPlayed(
+                                        book.id,
+                                        indices,
+                                        played,
+                                    )
+                                    libraryViewModel.setListened(book.id, position)
+                                },
+                                onSnapshotMarks = { playerViewModel.snapshotChapterMarks(book.id) },
+                                onRestoreMarks = { snapshot ->
+                                    val position = playerViewModel.restoreChapterMarks(book.id, snapshot)
+                                    libraryViewModel.setListened(book.id, position)
+                                },
+                                onUpdateMetadata = { title, author, narrator, chapters, cover ->
+                                    libraryViewModel.updateMetadata(
+                                        book.id,
+                                        title,
+                                        author,
+                                        narrator,
+                                        chapters,
+                                        cover,
+                                    )
+                                    libraryViewModel.state.value.books
+                                        .find { it.id == book.id }
+                                        ?.let(playerViewModel::patchDisplayedBook)
+                                },
+                                onDelete = {
+                                    if (player.book?.id == book.id) {
+                                        nowPlaying = false
+                                        playerViewModel.closeBook()
+                                    }
+                                    libraryViewModel.delete(listOf(book.id))
+                                    detailBookId = null
+                                },
+                                onMarkPlayed = {
+                                    libraryViewModel.markPlayed(listOf(book.id))
+                                    if (player.book?.id == book.id) {
+                                        playerViewModel.markBookPlayed()
+                                    }
+                                },
+                                onResetProgress = {
+                                    playerViewModel.resetBookProgress(book.id)
+                                    libraryViewModel.setListened(book.id, 0L)
+                                },
+                                onBack = { detailBookId = null },
+                                bottomContentPadding = 24.dp + miniPlayerClearance,
+                                selectionBackEnabled = !detailsCovered,
+                                modifier = screenModifier,
+                            )
                         }
-                        AppRoute.Library -> LibraryScreen(
-                            books = library.books,
-                            activeBookId = player.book?.id,
-                            isPlaying = player.isPlaying,
-                            playbackProgress = if (player.bookDurationMs == 0L) {
-                                0f
-                            } else {
-                                (player.bookPositionMs.toFloat() / player.bookDurationMs)
-                                    .coerceIn(0f, 1f)
-                            },
-                            hasFolder = library.folderUri != null,
-                            folderName = library.folderName,
-                            scanning = library.scanning,
-                            scanDone = library.scanDone,
-                            scanTotal = library.scanTotal,
-                            scanLabel = library.scanLabel,
-                            sort = library.sort,
-                            onSortChange = libraryViewModel::setSort,
-                            onMarkPlayed = { books ->
-                                libraryViewModel.markPlayed(books.map { it.id })
-                                if (books.any { it.id == player.book?.id }) {
-                                    playerViewModel.markBookPlayed()
-                                }
-                            },
-                            onDelete = { books ->
-                                val ids = books.map { it.id }
-                                if (detailBookId in ids) detailBookId = null
-                                if (player.book?.id in ids) {
-                                    nowPlaying = false
-                                    playerViewModel.closeBook()
-                                }
-                                libraryViewModel.delete(ids)
-                            },
-                            onUpdateMetadata = { id, title, author, narrator, chapters, cover ->
-                                libraryViewModel.updateMetadata(
-                                    id,
-                                    title,
-                                    author,
-                                    narrator,
-                                    chapters,
-                                    cover,
-                                )
-                                libraryViewModel.state.value.books
-                                    .find { it.id == id }
-                                    ?.let(playerViewModel::patchDisplayedBook)
-                            },
-                            onChooseFolder = { pickFolder.launch(null) },
-                            onOpenBook = { opened -> detailBookId = opened.id },
-                            onPlayBook = playBook,
-                            onOpenSettings = { showingSettings = true },
-                            bottomContentPadding = 24.dp + miniPlayerClearance,
-                            modifier = screenModifier,
-                        )
                     }
                 }
             }
 
             val book = player.book
-            if (book != null && !showingSettings && !showingPlaceholderCover) {
+            if (book != null) {
                 NowPlayingScreen(
                     player = player,
-                    expanded = nowPlaying,
+                    expanded = nowPlaying && !showingSettings && !showingPlaceholderCover,
                     onExpandedChange = { nowPlaying = it },
                     onTogglePlay = {
                         if (player.isPlaying) {
@@ -468,6 +373,68 @@ fun BookyApp(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+
+            PredictiveBackOverlay(
+                visible = showingSettings,
+                onDismiss = {
+                    showingPlaceholderCover = false
+                    showingSettings = false
+                },
+                interceptBack = showingSettings && !showingPlaceholderCover,
+            ) {
+                SettingsScreen(
+                    appearance = appearance,
+                    onAppearanceChange = appearanceViewModel::setMode,
+                    colorTheme = colorTheme,
+                    onColorThemeChange = appearanceViewModel::setColorTheme,
+                    contrastPreference = contrastPreference,
+                    onContrastPreferenceChange = appearanceViewModel::setContrastPreference,
+                    skipBackSeconds = player.skipBackSeconds,
+                    skipForwardSeconds = player.skipForwardSeconds,
+                    onSkipBackSecondsChange = playerViewModel::setSkipBackSeconds,
+                    onSkipForwardSecondsChange = playerViewModel::setSkipForwardSeconds,
+                    smartResumeEnabled = player.smartResumeEnabled,
+                    smartResumeSeconds = player.smartResumeSeconds,
+                    onSmartResumeEnabledChange = playerViewModel::setSmartResumeEnabled,
+                    onSmartResumeSecondsChange = playerViewModel::setSmartResumeSeconds,
+                    folderPath = library.folderPath,
+                    onChooseFolder = { pickFolder.launch(null) },
+                    playbackNotificationsEnabled = if (Build.VERSION.SDK_INT >= 33) {
+                        notificationsEnabled
+                    } else {
+                        null
+                    },
+                    onPlaybackNotificationsClick = {
+                        if (Build.VERSION.SDK_INT >= 33 &&
+                            !playbackNotificationsGranted(context)
+                        ) {
+                            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                    onOpenPlaceholderCover = { showingPlaceholderCover = true },
+                    onBack = {
+                        showingPlaceholderCover = false
+                        showingSettings = false
+                    },
+                    bottomContentPadding = 16.dp,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            PredictiveBackOverlay(
+                visible = showingPlaceholderCover,
+                onDismiss = { showingPlaceholderCover = false },
+                interceptBack = showingPlaceholderCover,
+            ) {
+                PlaceholderCoverScreen(
+                    style = placeholderCover,
+                    previewTitle = player.book?.title ?: "Pride and Prejudice",
+                    onStyleChange = appearanceViewModel::setPlaceholderCover,
+                    onBack = { showingPlaceholderCover = false },
+                    bottomContentPadding = 16.dp,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
         if (showNotificationExplainer) {
             AlertDialog(
@@ -494,13 +461,6 @@ fun BookyApp(
             )
         }
     }
-}
-
-private enum class AppRoute(val rank: Int) {
-    Library(0),
-    Details(1),
-    Settings(2),
-    Placeholder(3),
 }
 
 private fun playbackNotificationsGranted(context: android.content.Context): Boolean {

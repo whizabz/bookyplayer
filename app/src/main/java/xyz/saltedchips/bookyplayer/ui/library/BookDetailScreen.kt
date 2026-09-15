@@ -80,6 +80,7 @@ fun BookDetailScreen(
     onBack: () -> Unit,
     bottomContentPadding: Dp = 16.dp,
     modifier: Modifier = Modifier,
+    selectionBackEnabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -103,7 +104,7 @@ fun BookDetailScreen(
     var pendingPlayed by remember { mutableStateOf<Set<Int>?>(null) }
     val selectedComplete = selectedIndices.isNotEmpty() &&
         selectedIndices.all { it in completedChapters }
-    BackHandler(enabled = selecting) {
+    BackHandler(enabled = selecting && selectionBackEnabled) {
         selecting = false
         selectedIndices = emptySet()
         revealedIndex = null
