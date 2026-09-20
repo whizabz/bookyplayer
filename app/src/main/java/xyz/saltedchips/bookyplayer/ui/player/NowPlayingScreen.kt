@@ -156,8 +156,6 @@ private class ExpandedSlotLock {
     var skip by mutableStateOf<Offset?>(null)
     var title by mutableStateOf<Offset?>(null)
     var titleSize by mutableStateOf<IntSize?>(null)
-    var slider by mutableStateOf<Offset?>(null)
-    var sliderSize by mutableStateOf<IntSize?>(null)
 }
 private val MiniCoverSize = 40.dp
 private val MiniTitleWidth = 180.dp
@@ -524,7 +522,6 @@ private fun NowPlayingContent(
     var parentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var playSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var skipSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var sliderSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var titleSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val chapterDuration = player.chapterDurationMs.toFloat().coerceAtLeast(1f)
     val chapterPosition = player.chapterPositionMs.toFloat().coerceIn(0f, chapterDuration)
@@ -551,8 +548,6 @@ private fun NowPlayingContent(
     )
     val measuredPlay = slotOffset(parentCoords, playSlot)
     val measuredSkip = slotOffset(parentCoords, skipSlot)
-    val measuredSlider = slotOffset(parentCoords, sliderSlot)
-    val measuredSliderSize = sliderSlot?.takeIf { it.isAttached }?.size
     val measuredTitle = slotOffset(parentCoords, titleSlot)
     val measuredTitleSize = titleSlot?.takeIf { it.isAttached }?.size
     SideEffect {
@@ -561,13 +556,9 @@ private fun NowPlayingContent(
             measuredSkip?.let { slotLock.skip = it }
             measuredTitle?.let { slotLock.title = it }
             measuredTitleSize?.let { slotLock.titleSize = it }
-            measuredSlider?.let { slotLock.slider = it }
-            measuredSliderSize?.let { slotLock.sliderSize = it }
         } else if (transportSettled) {
             measuredPlay?.let { slotLock.play = it }
             measuredSkip?.let { slotLock.skip = it }
-            measuredSlider?.let { slotLock.slider = it }
-            measuredSliderSize?.let { slotLock.sliderSize = it }
         }
     }
     val titleExpandedOffset = slotLock.title
@@ -633,56 +624,13 @@ private fun NowPlayingContent(
     val expandedTitleWidth = slotLock.titleSize?.let { with(density) { it.width.toDp() } }
         ?: with(density) { (fullWidthPx - padExpPx * 2f).toDp() }
     val coverCorner = lerp(16.dp, MiniCoverSize / 2f, collapseProgress)
-    val sliderExpandedSize = slotLock.sliderSize
-        ?: measuredSliderSize.takeIf { transportSettled }
-        ?: IntSize(
-            (fullWidthPx - padExpPx * 2f).roundToInt(),
-            with(density) { 48.dp.roundToPx() },
-        )
-    val sliderExpandedOffset = slotLock.slider
-        ?: measuredSlider.takeIf { transportSettled }
-        ?: Offset(
-            padExpPx,
-            titleExpandedOffset.y + with(density) { (56.dp + 12.dp + 48.dp + 8.dp).toPx() },
-        )
     val showTransportOverlay = !measurementOnly && !transportSettled
-    val sliderMiniOffset = Offset(0f, 0f)
-    val sliderMiniSize = IntSize(
-        miniWidthPx.roundToInt(),
-        miniHeightPx.roundToInt(),
-    )
-    val expandedTrackHeightPx = with(density) { 16.dp.toPx() }
-    val sliderExpandedTrackOffset = Offset(
-        sliderExpandedOffset.x,
-        sliderExpandedOffset.y +
-            ((sliderExpandedSize.height - expandedTrackHeightPx) / 2f).coerceAtLeast(0f),
-    )
-    val sliderOffset = lerpOffset(sliderExpandedTrackOffset, sliderMiniOffset, collapseProgress)
-    val sliderWidth = lerp(
-        with(density) { sliderExpandedSize.width.toDp() },
-        with(density) { sliderMiniSize.width.toDp() },
-        collapseProgress,
-    )
-    val sliderHeight = lerp(16.dp, MiniPlayerHeight, collapseProgress)
-    val sliderThumbAlpha = (1f - chromeFade).coerceIn(0f, 1f)
-    val sliderSeekEnabled = collapseProgress < 0.5f
 
     Box(
         modifier
             .fillMaxSize()
             .onGloballyPositioned { parentCoords = it },
     ) {
-        val miniFillT = ((collapseProgress - 0.5f) / 0.5f).coerceIn(0f, 1f)
-        if (miniFillT > 0f) {
-            val fillFraction = (chapterPosition / chapterDuration).coerceIn(0f, 1f)
-            val fillColor = colors.primary.copy(alpha = 0.28f * miniFillT)
-            Canvas(Modifier.fillMaxSize()) {
-                drawRect(
-                    color = fillColor,
-                    size = Size(size.width * fillFraction + 2f, size.height),
-                )
-            }
-        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -776,9 +724,19 @@ private fun NowPlayingContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .onGloballyPositioned { sliderSlot = it },
-            )
+                    .height(48.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ChapterSlider(
+                    value = chapterPosition,
+                    valueRange = 0f..chapterDuration,
+                    onValueChange = { onSeek(it.toLong()) },
+                    enabled = !measurementOnly,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(16.dp),
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -984,25 +942,21 @@ private fun NowPlayingContent(
             Spacer(Modifier.height(12.dp))
         }
 
-        MorphingChapterSlider(
-            value = chapterPosition,
-            valueRange = 0f..chapterDuration,
-            onValueChange = { onSeek(it.toLong()) },
-            enabled = sliderSeekEnabled,
-            collapseProgress = collapseProgress,
-            thumbAlpha = sliderThumbAlpha,
-            modifier = Modifier
-                .offset { sliderOffset.round() }
-                .width(sliderWidth)
-                .height(sliderHeight)
-                .then(
-                    if (collapseProgress > 0.55f) {
-                        Modifier.clickable(onClick = onExpand)
-                    } else {
-                        Modifier
-                    },
-                ),
-        )
+        val miniFillT = ((collapseProgress - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        if (miniFillT > 0f) {
+            val fillFraction = (chapterPosition / chapterDuration).coerceIn(0f, 1f)
+            val fillColor = colors.primary.copy(alpha = 0.28f * miniFillT)
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(onClick = onExpand),
+            ) {
+                drawRect(
+                    color = fillColor,
+                    size = Size(size.width * fillFraction + 2f, size.height),
+                )
+            }
+        }
         BookCover(
             book = book,
             modifier = Modifier
@@ -1362,30 +1316,18 @@ private fun PlayerToolbarButton(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun MorphingChapterSlider(
+private fun ChapterSlider(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
     enabled: Boolean,
-    collapseProgress: Float,
-    thumbAlpha: Float,
     modifier: Modifier = Modifier,
 ) {
     val colors = SliderDefaults.colors()
     val interactionSource = remember { MutableInteractionSource() }
-    val thumbGap = lerp(6.dp, 0.dp, collapseProgress)
-    val thumbSize = DpSize(4.dp, lerp(44.dp, 4.dp, collapseProgress))
+    val thumbGap = 6.dp
+    val thumbSize = DpSize(4.dp, 44.dp)
     val scheme = MaterialTheme.colorScheme
-    val activeColor = lerpColor(
-        scheme.primary,
-        scheme.primary.copy(alpha = 0.28f),
-        collapseProgress,
-    )
-    val inactiveColor = lerpColor(
-        scheme.secondaryContainer,
-        scheme.secondaryContainer.copy(alpha = 0f),
-        collapseProgress,
-    )
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Slider(
             value = value,
@@ -1395,14 +1337,12 @@ private fun MorphingChapterSlider(
             colors = colors,
             interactionSource = interactionSource,
             thumb = {
-                Box(Modifier.graphicsLayer { alpha = thumbAlpha }) {
-                    SliderDefaults.Thumb(
-                        interactionSource = interactionSource,
-                        colors = colors,
-                        enabled = true,
-                        thumbSize = thumbSize,
-                    )
-                }
+                SliderDefaults.Thumb(
+                    interactionSource = interactionSource,
+                    colors = colors,
+                    enabled = true,
+                    thumbSize = thumbSize,
+                )
             },
             track = { sliderState ->
                 val fraction = sliderState.coercedValueAsFraction.coerceIn(0f, 1f)
@@ -1410,16 +1350,12 @@ private fun MorphingChapterSlider(
                     val radius = size.height / 2f
                     val corner = CornerRadius(radius, radius)
                     val split = size.width * fraction
-                    val gapPx = thumbGap.toPx() +
-                        (thumbSize.width.toPx() / 2f) * (1f - collapseProgress)
-                    if (gapPx < 1f || collapseProgress > 0.85f) {
-                        return@Canvas
-                    }
+                    val gapPx = thumbGap.toPx() + thumbSize.width.toPx() / 2f
                     val activeEnd = (split - gapPx).coerceAtLeast(0f)
                     val inactiveStart = (split + gapPx).coerceAtMost(size.width)
                     if (activeEnd > 0f) {
                         drawRoundRect(
-                            color = activeColor,
+                            color = scheme.primary,
                             size = Size(activeEnd, size.height),
                             cornerRadius = corner,
                         )
@@ -1427,15 +1363,15 @@ private fun MorphingChapterSlider(
                     val inactiveWidth = size.width - inactiveStart
                     if (inactiveWidth > 0f) {
                         drawRoundRect(
-                            color = inactiveColor,
+                            color = scheme.secondaryContainer,
                             topLeft = Offset(inactiveStart, 0f),
                             size = Size(inactiveWidth, size.height),
                             cornerRadius = corner,
                         )
                     }
-                    if (thumbAlpha > 0.05f && inactiveWidth > radius * 2f) {
+                    if (inactiveWidth > radius * 2f) {
                         drawCircle(
-                            color = activeColor,
+                            color = scheme.primary,
                             radius = 2.dp.toPx(),
                             center = Offset(size.width - radius, radius),
                         )
