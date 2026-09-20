@@ -20,19 +20,9 @@ class AutoLibrary(context: Context) {
         return browsableItem(ROOT, "Booky Player")
     }
 
-    fun rootTabs(): List<MediaItem> {
-        val tabs = mutableListOf(browsableItem(TAB_LIBRARY, "Library"))
-        if (continueBook() != null) {
-            tabs += browsableItem(TAB_CONTINUE, "Continue")
-        }
-        return tabs
-    }
-
     fun children(parentId: String): List<MediaItem> {
         return when (parentId) {
-            ROOT -> rootTabs()
-            TAB_LIBRARY -> visibleBooks().map { bookItem(it) }
-            TAB_CONTINUE -> listOfNotNull(continueBook()?.let { playableBookItem(it) })
+            ROOT, TAB_LIBRARY, TAB_CONTINUE -> autoBrowseItems()
             else -> bookIdFromNode(parentId)?.let { id ->
                 bookById(id)?.let(::chapterItems).orEmpty()
             }.orEmpty()
@@ -41,19 +31,24 @@ class AutoLibrary(context: Context) {
 
     fun item(mediaId: String): MediaItem? {
         return when (mediaId) {
-            ROOT -> libraryRoot()
-            TAB_LIBRARY -> browsableItem(TAB_LIBRARY, "Library")
-            TAB_CONTINUE -> browsableItem(TAB_CONTINUE, "Continue")
+            ROOT, TAB_LIBRARY, TAB_CONTINUE -> libraryRoot()
             else -> {
-                bookIdFromNode(mediaId)?.let { id -> bookById(id)?.let(::bookItem) }
-                    ?: parseChapter(mediaId)?.let { (id, index) ->
-                        bookById(id)?.let { chapterItem(it, index) }
+                bookIdFromNode(mediaId)?.let { id ->
+                    bookById(id)?.let { book ->
+                        if (book.id == autoLibraryBooks().firstOrNull()?.id) {
+                            playableBookItem(book)
+                        } else {
+                            bookItem(book)
+                        }
                     }
+                } ?: parseChapter(mediaId)?.let { (id, index) ->
+                    bookById(id)?.let { chapterItem(it, index) }
+                }
             }
         }
     }
 
-    fun resolvePlay(mediaId: String): MediaSession.MediaItemsWithStartPosition? {
+    fun resolvePlay(mediaId: String, touchLastPlayed: Boolean = true): MediaSession.MediaItemsWithStartPosition? {
         val chapter = parseChapter(mediaId)
         if (chapter != null) {
             val (bookId, index) = chapter
@@ -61,7 +56,7 @@ class AutoLibrary(context: Context) {
             val items = book.toMediaItems(appContext)
             if (items.isEmpty()) return null
             val target = index.coerceIn(0, items.lastIndex)
-            markStarted(book.id)
+            if (touchLastPlayed) markStarted(book.id)
             return MediaSession.MediaItemsWithStartPosition(
                 items,
                 target,
@@ -74,13 +69,15 @@ class AutoLibrary(context: Context) {
         if (items.isEmpty()) return null
         val position = resumePosition(book)
         val (index, offset) = windowForBookPosition(position, book.chapterDurationsMs)
-        markStarted(book.id)
+        if (touchLastPlayed) markStarted(book.id)
         return MediaSession.MediaItemsWithStartPosition(items, index, offset)
     }
 
-    fun playbackResumption(): MediaSession.MediaItemsWithStartPosition? {
-        val id = prefs.getString(KEY_BOOK_ID, null) ?: return null
-        return resolvePlay(bookNode(id))
+    fun playbackResumption(touchLastPlayed: Boolean = true): MediaSession.MediaItemsWithStartPosition? {
+        val id = prefs.getString(KEY_BOOK_ID, null)
+            ?: autoLibraryBooks().firstOrNull()?.id
+            ?: return null
+        return resolvePlay(bookNode(id), touchLastPlayed)
     }
 
     fun persistFromPlayer(player: Player) {
@@ -115,21 +112,31 @@ class AutoLibrary(context: Context) {
 
     fun bookById(bookId: String): Audiobook? = visibleBooks().find { it.id == bookId }
 
-    fun visibleBooks(): List<Audiobook> {
+    fun visibleBooks(): List<Audiobook> = sortBooks(decoratedBooks())
+
+    private fun autoLibraryBooks(): List<Audiobook> {
+        val books = decoratedBooks()
+        val currentId = prefs.getString(KEY_BOOK_ID, null)
+        val current = currentId?.let { id -> books.find { it.id == id } }
+        val rest = books.filter { it.id != current?.id }.sortedByDescending { it.lastPlayedMs }
+        return listOfNotNull(current) + rest
+    }
+
+    private fun autoBrowseItems(): List<MediaItem> {
+        return autoLibraryBooks().mapIndexed { index, book ->
+            if (index == 0) playableBookItem(book) else bookItem(book)
+        }
+    }
+
+    private fun decoratedBooks(): List<Audiobook> {
         val catalog = LibraryCatalogStore.load(appContext) ?: return emptyList()
         val hidden = prefs.getStringSet(KEY_HIDDEN, emptySet()).orEmpty()
         val listened = loadLongMap(KEY_LISTENED)
         val lastPlayed = loadLongMap(KEY_LAST_PLAYED)
         val metadata = loadMetadata()
-        val decorated = catalog.books
+        return catalog.books
             .filterNot { it.id in hidden }
             .map { book -> decorate(book, metadata[book.id], listened, lastPlayed) }
-        return sortBooks(decorated)
-    }
-
-    private fun continueBook(): Audiobook? {
-        val id = prefs.getString(KEY_BOOK_ID, null) ?: return null
-        return bookById(id)
     }
 
     private fun decorate(
@@ -237,10 +244,16 @@ class AutoLibrary(context: Context) {
         return map
     }
 
-    private fun decorateArtwork(builder: MediaMetadata.Builder, book: Audiobook): MediaMetadata.Builder {
+    private fun decorateArtwork(
+        builder: MediaMetadata.Builder,
+        book: Audiobook,
+        includeBytes: Boolean,
+    ): MediaMetadata.Builder {
         CoverLoader.sessionArtwork(appContext, book)?.let { art ->
             builder.setArtworkUri(art.contentUri)
-            builder.setArtworkData(art.bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            if (includeBytes) {
+                builder.setArtworkData(art.bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            }
         }
         return builder
     }
@@ -288,6 +301,7 @@ class AutoLibrary(context: Context) {
                 .setIsBrowsable(browsable)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK),
             book,
+            includeBytes = false,
         ).build()
     }
 
@@ -314,6 +328,7 @@ class AutoLibrary(context: Context) {
                         .setTotalTrackCount(book.chapterCountForBrowse())
                         .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER),
                     book,
+                    includeBytes = false,
                 ).build(),
             )
             .build()

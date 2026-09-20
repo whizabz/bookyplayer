@@ -9,6 +9,7 @@ import android.net.Uri
 import android.util.LruCache
 import androidx.core.content.FileProvider
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.player.TrustedMediaClients
 import java.io.ByteArrayOutputStream
 import java.io.File
 
@@ -21,6 +22,7 @@ object CoverLoader {
     private val sessionArt = object : LruCache<String, SessionArtwork>(4) {
         override fun sizeOf(key: String, value: SessionArtwork): Int = 1
     }
+    private val extraPackages = mutableSetOf<String>()
 
     fun load(context: Context, book: Audiobook, sampleSize: Int = 2): Bitmap? {
         decodeUri(context, book.coverUri, sampleSize)?.let { return it }
@@ -60,6 +62,23 @@ object CoverLoader {
         return art
     }
 
+    fun grantArtworkTo(context: Context, packageName: String) {
+        if (packageName.isBlank()) return
+        extraPackages += packageName
+        val dir = File(context.cacheDir, ARTWORK_DIR)
+        dir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            val uri = runCatching {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.artwork",
+                    file,
+                )
+            }.getOrNull() ?: return@forEach
+            grantToPackage(context, uri, packageName)
+        }
+    }
+
     private fun artworkFile(context: Context, bookId: String): File {
         val dir = File(context.cacheDir, ARTWORK_DIR)
         val safe = bookId.hashCode().toString()
@@ -67,9 +86,14 @@ object CoverLoader {
     }
 
     private fun grantArtworkRead(context: Context, uri: Uri) {
-        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-        ARTWORK_PACKAGES.forEach { pkg ->
-            runCatching { context.grantUriPermission(pkg, uri, flags) }
+        (TrustedMediaClients.packages + extraPackages).forEach { pkg ->
+            grantToPackage(context, uri, pkg)
+        }
+    }
+
+    private fun grantToPackage(context: Context, uri: Uri, packageName: String) {
+        runCatching {
+            context.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
 
@@ -113,12 +137,6 @@ object CoverLoader {
         }
     }
 
-    private const val SESSION_ART_MAX_EDGE = 512
+    private const val SESSION_ART_MAX_EDGE = 256
     private const val ARTWORK_DIR = "session_artwork"
-    private val ARTWORK_PACKAGES = listOf(
-        "com.google.android.projection.gearhead",
-        "com.google.android.gms",
-        "com.android.bluetooth",
-        "com.android.systemui",
-    )
 }

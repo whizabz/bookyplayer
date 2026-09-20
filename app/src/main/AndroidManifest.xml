@@ -6,6 +6,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+        <package android:name="com.google.android.gms" />
+        <package android:name="com.google.android.gms.car" />
+        <package android:name="com.google.android.embedded.projection" />
+        <package android:name="com.google.android.apps.automotive.templates.host" />
+        <package android:name="com.android.bluetooth" />
+        <package android:name="com.android.systemui" />
+        <package android:name="com.android.car" />
+        <package android:name="com.android.car.media" />
+    </queries>
+
     <uses-feature
         android:name="android.hardware.type.automotive"
         android:required="false" />

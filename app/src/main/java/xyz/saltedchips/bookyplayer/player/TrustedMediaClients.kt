@@ -6,7 +6,7 @@ import java.security.MessageDigest
 import java.util.UUID
 
 internal object TrustedMediaClients {
-    private val packages = setOf(
+    internal val packages = setOf(
         "android",
         "com.android.bluetooth",
         "com.android.car",

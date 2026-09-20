@@ -15,6 +15,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
@@ -32,6 +33,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import xyz.saltedchips.bookyplayer.MainActivity
 import xyz.saltedchips.bookyplayer.R
+import xyz.saltedchips.bookyplayer.library.CoverLoader
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_REPEAT
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_BACK
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_FORWARD
@@ -142,15 +144,16 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, skipPlayer, LibraryCallback())
             .setSessionActivity(sessionActivity)
             .setMediaButtonPreferences(mediaButtonPreferences())
+            .setBitmapLoader(CacheBitmapLoader(CoverBitmapLoader(this)))
             .build()
         val notifications = DefaultMediaNotificationProvider.Builder(this).build()
         notifications.setSmallIcon(R.drawable.ms_book_2)
         setMediaNotificationProvider(notifications)
         scheduleWidgetUpdate(skipPlayer)
+        handler.post { prepareLastBookIfIdle() }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
-        if (!TrustedMediaClients.allows(controllerInfo.packageName, packageName)) return null
         return session
     }
 
@@ -210,6 +213,29 @@ class PlaybackService : MediaLibraryService() {
             captureNowPlaying(it, this)
             lastWidgetUpdateAt = 0L
             pushWidgetUpdate()
+        }
+    }
+
+    private fun prepareLastBookIfIdle() {
+        val exo = player ?: return
+        if (exo.mediaItemCount > 0) return
+        val resume = library.playbackResumption(touchLastPlayed = false) ?: return
+        if (resume.mediaItems.isEmpty()) return
+        applyPlaybackPrefs()
+        exo.setMediaItems(resume.mediaItems, resume.startIndex, resume.startPositionMs)
+        exo.prepare()
+        captureNowPlaying(exo, this)
+        lastWidgetUpdateAt = 0L
+        pushWidgetUpdate()
+    }
+
+    private fun applyPlaybackPrefs() {
+        val exo = exoPlayer ?: return
+        exo.setPlaybackSpeed(library.speed())
+        exo.repeatMode = if (library.repeatEnabled()) {
+            Player.REPEAT_MODE_ALL
+        } else {
+            Player.REPEAT_MODE_OFF
         }
     }
 
@@ -285,9 +311,11 @@ class PlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
-            if (!TrustedMediaClients.allows(controller.packageName, packageName)) {
+            if (!isTrustedController(session, controller)) {
                 return MediaSession.ConnectionResult.reject()
             }
+            CoverLoader.grantArtworkTo(this@PlaybackService, controller.packageName)
+            handler.post { prepareLastBookIfIdle() }
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(SessionCommand(COMMAND_REPEAT, android.os.Bundle.EMPTY))
                 .build()
@@ -317,6 +345,7 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> {
+            handler.post { prepareLastBookIfIdle() }
             val extras = AutoLibrary.contentStyleExtras
             val resultParams = MediaLibraryService.LibraryParams.Builder()
                 .setExtras(extras)
@@ -432,16 +461,16 @@ class PlaybackService : MediaLibraryService() {
             val mediaId = mediaItems.firstOrNull()?.mediaId?.takeIf { it.isNotBlank() } ?: return null
             return library.resolvePlay(mediaId)
         }
+    }
 
-        private fun applyPlaybackPrefs() {
-            val exo = exoPlayer ?: return
-            exo.setPlaybackSpeed(library.speed())
-            exo.repeatMode = if (library.repeatEnabled()) {
-                Player.REPEAT_MODE_ALL
-            } else {
-                Player.REPEAT_MODE_OFF
-            }
-        }
+    private fun isTrustedController(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+    ): Boolean {
+        if (session.isMediaNotificationController(controller)) return true
+        if (session.isAutomotiveController(controller)) return true
+        if (session.isAutoCompanionController(controller)) return true
+        return TrustedMediaClients.allows(controller.packageName, packageName)
     }
 
     companion object {
