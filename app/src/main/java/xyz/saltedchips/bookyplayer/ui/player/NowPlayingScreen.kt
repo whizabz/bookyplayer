@@ -67,6 +67,8 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
@@ -98,7 +100,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.dropShadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp as lerpOffset
@@ -724,7 +725,7 @@ private fun NowPlayingContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(56.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 ChapterSlider(
@@ -732,6 +733,7 @@ private fun NowPlayingContent(
                     valueRange = 0f..chapterDuration,
                     onValueChange = { onSeek(it.toLong()) },
                     enabled = !measurementOnly,
+                    playing = player.isPlaying,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(16.dp),
@@ -1321,13 +1323,13 @@ private fun ChapterSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
     enabled: Boolean,
+    playing: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val colors = SliderDefaults.colors()
     val interactionSource = remember { MutableInteractionSource() }
     val thumbGap = 6.dp
-    val thumbSize = DpSize(4.dp, 44.dp)
-    val scheme = MaterialTheme.colorScheme
+    val thumbSize = DpSize(4.dp, 52.dp)
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Slider(
             value = value,
@@ -1346,36 +1348,26 @@ private fun ChapterSlider(
             },
             track = { sliderState ->
                 val fraction = sliderState.coercedValueAsFraction.coerceIn(0f, 1f)
-                Canvas(Modifier.fillMaxSize()) {
-                    val radius = size.height / 2f
-                    val corner = CornerRadius(radius, radius)
-                    val split = size.width * fraction
-                    val gapPx = thumbGap.toPx() + thumbSize.width.toPx() / 2f
-                    val activeEnd = (split - gapPx).coerceAtLeast(0f)
-                    val inactiveStart = (split + gapPx).coerceAtMost(size.width)
-                    if (activeEnd > 0f) {
-                        drawRoundRect(
-                            color = scheme.primary,
-                            size = Size(activeEnd, size.height),
-                            cornerRadius = corner,
-                        )
-                    }
-                    val inactiveWidth = size.width - inactiveStart
-                    if (inactiveWidth > 0f) {
-                        drawRoundRect(
-                            color = scheme.secondaryContainer,
-                            topLeft = Offset(inactiveStart, 0f),
-                            size = Size(inactiveWidth, size.height),
-                            cornerRadius = corner,
-                        )
-                    }
-                    if (inactiveWidth > radius * 2f) {
-                        drawCircle(
-                            color = scheme.primary,
-                            radius = 2.dp.toPx(),
-                            center = Offset(size.width - radius, radius),
-                        )
-                    }
+                val density = LocalDensity.current
+                val thumbClearance = thumbGap + thumbSize.width / 2
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val gapPx = with(density) { thumbClearance.toPx() }
+                    val width = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                    val inset = (gapPx / width).coerceIn(0f, 0.5f)
+                    LinearWavyProgressIndicator(
+                        progress = { (fraction - inset).coerceAtLeast(0f) },
+                        modifier = Modifier.fillMaxSize(),
+                        gapSize = thumbClearance * 2,
+                        stopSize = 4.dp,
+                        amplitude = { progress ->
+                            when {
+                                !playing -> 0f
+                                progress <= 0.1f || progress >= 0.95f -> 0f
+                                else -> 0.4f
+                            }
+                        },
+                        waveSpeed = WavyProgressIndicatorDefaults.LinearDeterminateWavelength / 3f,
+                    )
                 }
             },
             valueRange = valueRange,

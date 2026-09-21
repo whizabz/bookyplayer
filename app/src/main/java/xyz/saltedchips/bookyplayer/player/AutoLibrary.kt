@@ -104,6 +104,11 @@ class AutoLibrary(context: Context) {
 
     fun speed(): Float = prefs.getFloat(KEY_SPEED, 1f)
 
+    fun setSpeed(speed: Float) {
+        if (speed() == speed) return
+        prefs.edit().putFloat(KEY_SPEED, speed).apply()
+    }
+
     fun repeatEnabled(): Boolean = prefs.getBoolean(KEY_REPEAT, false)
 
     fun setRepeatEnabled(enabled: Boolean) {

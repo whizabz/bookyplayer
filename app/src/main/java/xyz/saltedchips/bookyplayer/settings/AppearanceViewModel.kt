@@ -58,6 +58,7 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
             .remove(KEY_FONT)
             .remove(KEY_USE_INTER)
             .remove(KEY_CIRCULAR_PROGRESS)
+            .remove(KEY_PROGRESS_BAR)
             .apply()
     }
 
@@ -115,6 +116,7 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         const val KEY_APPEARANCE = "appearance_mode"
         const val KEY_COLOR_THEME = "color_theme"
         const val KEY_CONTRAST = "contrast_preference"
+        const val KEY_PROGRESS_BAR = "progress_bar_style"
         const val KEY_PLACEHOLDER_SHAPE = "placeholder_cover_shape"
         const val KEY_PLACEHOLDER_FONT = "placeholder_cover_font"
         const val KEY_PLACEHOLDER_WEIGHT = "placeholder_cover_weight"
