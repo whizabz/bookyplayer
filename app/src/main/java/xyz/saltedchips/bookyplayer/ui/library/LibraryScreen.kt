@@ -261,7 +261,6 @@ fun LibraryScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 LibraryScanProgress(
-                    refreshing = false,
                     scanDone = scanDone,
                     scanTotal = scanTotal,
                 )
@@ -279,16 +278,6 @@ fun LibraryScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
             ) {
-                if (scanning) {
-                    item("scanning") {
-                        LibraryScanProgress(
-                            refreshing = true,
-                            scanDone = scanDone,
-                            scanTotal = scanTotal,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                        )
-                    }
-                }
                 if (!hasFolder) {
                     item("choose-folder") {
                         Card(modifier = Modifier.fillMaxWidth()) {
@@ -592,7 +581,6 @@ private fun LibraryRow(
 
 @Composable
 private fun LibraryScanProgress(
-    refreshing: Boolean,
     scanDone: Int,
     scanTotal: Int,
     modifier: Modifier = Modifier,
@@ -601,11 +589,6 @@ private fun LibraryScanProgress(
         0f
     } else {
         (scanDone.toFloat() / scanTotal.toFloat()).coerceIn(0f, 1f)
-    }
-    val headline = if (refreshing) {
-        "Scanning for changes"
-    } else {
-        "Scanning for new books"
     }
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -619,7 +602,7 @@ private fun LibraryScanProgress(
             drawStopIndicator = {},
         )
         Text(
-            text = headline,
+            text = "Scanning for new books",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 16.dp),

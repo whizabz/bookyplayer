@@ -143,7 +143,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-private enum class PlayerAnchor { Expanded, Mini, Hidden }
+private enum class PlayerAnchor { Chapters, Expanded, Mini, Hidden }
 
 private val MiniPlayerHeight = 64.dp
 private val MiniPlayerInset = 12.dp
@@ -201,6 +201,7 @@ fun NowPlayingScreen(
         AnchoredDraggableState(
             initialValue = if (expanded) PlayerAnchor.Expanded else PlayerAnchor.Hidden,
             DraggableAnchors {
+                PlayerAnchor.Chapters at -10_000f
                 PlayerAnchor.Expanded at 0f
                 PlayerAnchor.Mini at 10_000f
                 PlayerAnchor.Hidden at 20_000f
@@ -216,7 +217,11 @@ fun NowPlayingScreen(
     }
     LaunchedEffect(expanded) {
         if (!hasEntered) return@LaunchedEffect
-        val target = if (expanded) PlayerAnchor.Expanded else PlayerAnchor.Mini
+        val target = when {
+            !expanded -> PlayerAnchor.Mini
+            dragState.currentValue == PlayerAnchor.Chapters -> PlayerAnchor.Chapters
+            else -> PlayerAnchor.Expanded
+        }
         if (dragState.currentValue != target) {
             dragState.animateTo(target, spatialSpec)
         }
@@ -224,12 +229,18 @@ fun NowPlayingScreen(
     LaunchedEffect(dragState.settledValue) {
         when (dragState.settledValue) {
             PlayerAnchor.Hidden -> Unit
-            PlayerAnchor.Expanded -> if (!expanded) onExpandedChange(true)
+            PlayerAnchor.Chapters,
+            PlayerAnchor.Expanded,
+            -> if (!expanded) onExpandedChange(true)
             PlayerAnchor.Mini -> if (expanded) onExpandedChange(false)
         }
     }
     BackHandler(enabled = expanded) {
-        settleTo(PlayerAnchor.Mini)
+        if (dragState.currentValue == PlayerAnchor.Chapters) {
+            settleTo(PlayerAnchor.Expanded)
+        } else {
+            settleTo(PlayerAnchor.Mini)
+        }
     }
 
     val slotLock = remember(player.book?.id) { ExpandedSlotLock() }
@@ -243,10 +254,14 @@ fun NowPlayingScreen(
         val fullHeightPx = constraints.maxHeight.toFloat()
         val rangePx = (fullHeightPx - miniHeightPx - navPx - screenOffsetPx).coerceAtLeast(1f)
         val hiddenPx = rangePx + miniHeightPx + navPx + screenOffsetPx
-        LaunchedEffect(rangePx, hiddenPx) {
+        val statusPx = WindowInsets.statusBars.getTop(density).toFloat()
+        val chapterSheetPx = (fullHeightPx - statusPx - with(density) { 12.dp.toPx() })
+            .coerceAtLeast(1f)
+        LaunchedEffect(rangePx, hiddenPx, chapterSheetPx) {
             if (!hasEntered && !expanded) {
                 dragState.updateAnchors(
                     DraggableAnchors {
+                        PlayerAnchor.Chapters at -chapterSheetPx
                         PlayerAnchor.Expanded at 0f
                         PlayerAnchor.Mini at rangePx
                         PlayerAnchor.Hidden at hiddenPx
@@ -261,6 +276,7 @@ fun NowPlayingScreen(
             }
             dragState.updateAnchors(
                 DraggableAnchors {
+                    PlayerAnchor.Chapters at -chapterSheetPx
                     PlayerAnchor.Expanded at 0f
                     PlayerAnchor.Mini at rangePx
                 },
@@ -275,6 +291,7 @@ fun NowPlayingScreen(
         )
         val rawProgress = offsetPx / rangePx
         val collapseProgress = rawProgress.coerceIn(0f, 1f)
+        val chapterProgress = (-offsetPx / chapterSheetPx).coerceIn(0f, 1f)
         val miniSettled = collapseProgress > 0.92f &&
             dragState.settledValue == PlayerAnchor.Mini &&
             !dragState.isAnimationRunning
@@ -353,6 +370,8 @@ fun NowPlayingScreen(
                     onRestoreMarks = {},
                     onToggleRepeat = {},
                     onCloseBook = {},
+                    onOpenChapters = {},
+                    chaptersOpen = false,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -418,6 +437,7 @@ fun NowPlayingScreen(
                 .anchoredDraggable(
                     state = dragState,
                     orientation = Orientation.Vertical,
+                    enabled = chapterProgress < 0.98f,
                     flingBehavior = flingBehavior,
                 ),
             shape = RoundedCornerShape(corner),
@@ -467,8 +487,70 @@ fun NowPlayingScreen(
                 onRestoreMarks = onRestoreMarks,
                 onToggleRepeat = onToggleRepeat,
                 onCloseBook = onCloseBook,
+                onOpenChapters = { settleTo(PlayerAnchor.Chapters) },
+                chaptersOpen = chapterProgress > 0.5f,
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+        if (chapterProgress > 0.01f && collapseProgress < 0.2f) {
+            val book = player.book
+            Box(Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = chapterProgress }
+                        .background(scrim)
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() },
+                        ) {
+                            settleTo(PlayerAnchor.Expanded)
+                        },
+                )
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(with(density) { chapterSheetPx.toDp() })
+                        .offset {
+                            IntOffset(
+                                0,
+                                ((1f - chapterProgress) * chapterSheetPx).roundToInt(),
+                            )
+                        }
+                        .anchoredDraggable(
+                            state = dragState,
+                            orientation = Orientation.Vertical,
+                            enabled = chapterProgress > 0.02f,
+                            flingBehavior = flingBehavior,
+                        ),
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    color = colors.surface,
+                    contentColor = colors.onSurface,
+                    shadowElevation = 0.dp,
+                    tonalElevation = 2.dp,
+                ) {
+                    if (book != null) {
+                        ChapterListPane(
+                            titles = book.chapterTitles.ifEmpty { listOf(book.currentChapterTitle) },
+                            durationsMs = book.chapterDurationsMs,
+                            bookPositionMs = player.bookPositionMs,
+                            currentIndex = player.currentChapterIndex,
+                            isPlaying = player.isPlaying,
+                            positionsMs = player.chapterPositionsMs,
+                            completedChapters = player.completedChapters,
+                            onSelect = { index ->
+                                onSeekChapter(index)
+                                settleTo(PlayerAnchor.Expanded)
+                            },
+                            onSetChaptersPlayed = onSetChaptersPlayed,
+                            onSnapshotMarks = onSnapshotMarks,
+                            onRestoreMarks = onRestoreMarks,
+                            onDismiss = { settleTo(PlayerAnchor.Expanded) },
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -505,6 +587,8 @@ private fun NowPlayingContent(
     onRestoreMarks: (ChapterMarksSnapshot) -> Unit,
     onToggleRepeat: () -> Unit,
     onCloseBook: () -> Unit,
+    onOpenChapters: () -> Unit,
+    chaptersOpen: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val book = player.book ?: return
@@ -514,7 +598,6 @@ private fun NowPlayingContent(
     val speedLabel = formatSpeed(player.speed)
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
-    var showChapters by remember { mutableStateOf(false) }
     var pendingToolbarMark by remember { mutableStateOf(false) }
     var pendingMarkChapterConfirm by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -804,8 +887,8 @@ private fun NowPlayingContent(
                                 onCheckedChange = { onTogglePlay() },
                                 enabled = !showTransportOverlay,
                                 shapes = IconButtonDefaults.toggleableShapes(
-                                    shape = IconButtonDefaults.extraLargeSquareShape,
-                                    pressedShape = IconButtonDefaults.extraLargePressedShape,
+                                    shape = IconButtonDefaults.extraLargeRoundShape,
+                                    pressedShape = IconButtonDefaults.extraLargeRoundShape,
                                     checkedShape = IconButtonDefaults.extraLargeRoundShape,
                                 ),
                                 colors = IconButtonDefaults.filledIconToggleButtonColors(
@@ -909,8 +992,8 @@ private fun NowPlayingContent(
                 )
                 toolbarItem(
                     menuLabel = "Chapters",
-                    active = showChapters,
-                    onClick = { showChapters = true },
+                    active = chaptersOpen,
+                    onClick = onOpenChapters,
                     icon = { Icon(BookyIcons.chapters, contentDescription = null) },
                 )
                 toolbarItem(
@@ -1020,12 +1103,8 @@ private fun NowPlayingContent(
                     checked = player.isPlaying,
                     onCheckedChange = { onTogglePlay() },
                     shapes = IconButtonDefaults.toggleableShapes(
-                        shape = if (collapseProgress > 0.55f) {
-                            RoundedCornerShape(MiniPlaySize / 2f)
-                        } else {
-                            IconButtonDefaults.extraLargeSquareShape
-                        },
-                        pressedShape = IconButtonDefaults.extraLargePressedShape,
+                        shape = IconButtonDefaults.extraLargeRoundShape,
+                        pressedShape = IconButtonDefaults.extraLargeRoundShape,
                         checkedShape = IconButtonDefaults.extraLargeRoundShape,
                     ),
                     colors = IconButtonDefaults.filledIconToggleButtonColors(
@@ -1130,22 +1209,6 @@ private fun NowPlayingContent(
                 speed = player.speed,
                 onSetSpeed = onSetSpeed,
                 onDismiss = { showSpeed = false },
-            )
-        }
-        if (showChapters) {
-            ChapterListSheet(
-                titles = book.chapterTitles.ifEmpty { listOf(book.currentChapterTitle) },
-                durationsMs = book.chapterDurationsMs,
-                bookPositionMs = player.bookPositionMs,
-                currentIndex = player.currentChapterIndex,
-                isPlaying = player.isPlaying,
-                positionsMs = player.chapterPositionsMs,
-                completedChapters = player.completedChapters,
-                onSelect = onSeekChapter,
-                onSetChaptersPlayed = onSetChaptersPlayed,
-                onSnapshotMarks = onSnapshotMarks,
-                onRestoreMarks = onRestoreMarks,
-                onDismiss = { showChapters = false },
             )
         }
         }
@@ -1824,7 +1887,7 @@ private fun SleepStepper(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ChapterListSheet(
+private fun ChapterListPane(
     titles: List<String>,
     durationsMs: List<Long>,
     bookPositionMs: Long,
@@ -1876,78 +1939,77 @@ private fun ChapterListSheet(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
-        Box(Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth()) {
-                SheetHeader(title = "Chapters")
-                LazyColumn(
-                    state = listState,
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = SheetHeaderToContentPadding,
-                        bottom = 24.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-                ) {
-                    itemsIndexed(titles) { index, title ->
-                        val selected = index == currentIndex
-                        val duration = durationsMs.getOrNull(index) ?: 0L
-                        val complete = index in completedChapters
-                        val progress = if (complete) {
-                            1f
-                        } else {
-                            chapterListenProgress(
-                                index = index,
-                                durationMs = duration,
-                                bookPositionMs = bookPositionMs,
-                                chapterDurationsMs = durationsMs,
-                                savedPositionsMs = positionsMs,
-                            )
-                        }
-                        SwipeableChapterRow(
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                BottomSheetDefaults.DragHandle()
+            }
+            SheetHeader(title = "Chapters")
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                state = listState,
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = SheetHeaderToContentPadding,
+                    bottom = 24.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                itemsIndexed(titles) { index, title ->
+                    val selected = index == currentIndex
+                    val duration = durationsMs.getOrNull(index) ?: 0L
+                    val complete = index in completedChapters
+                    val progress = if (complete) {
+                        1f
+                    } else {
+                        chapterListenProgress(
                             index = index,
-                            title = title,
                             durationMs = duration,
-                            progress = progress,
-                            complete = complete,
-                            selected = selected,
-                            itemShapes = ListItemDefaults.segmentedShapes(
-                                index = index,
-                                count = titles.size,
-                            ),
-                            revealed = revealedIndex == index,
-                            swipeEnabled = true,
-                            playing = selected && isPlaying,
-                            onClick = {
-                                onSelect(index)
-                                onDismiss()
-                            },
-                            onRevealedChange = { open ->
-                                revealedIndex = if (open) {
-                                    index
-                                } else if (revealedIndex == index) {
-                                    null
-                                } else {
-                                    revealedIndex
-                                }
-                            },
-                            onMarkPlayed = { requestMarkPlayed(index) },
-                            onMarkUnplayed = { applyUnplayed(index) },
+                            bookPositionMs = bookPositionMs,
+                            chapterDurationsMs = durationsMs,
+                            savedPositionsMs = positionsMs,
                         )
                     }
+                    SwipeableChapterRow(
+                        index = index,
+                        title = title,
+                        durationMs = duration,
+                        progress = progress,
+                        complete = complete,
+                        selected = selected,
+                        itemShapes = ListItemDefaults.segmentedShapes(
+                            index = index,
+                            count = titles.size,
+                        ),
+                        revealed = revealedIndex == index,
+                        swipeEnabled = true,
+                        playing = selected && isPlaying,
+                        onClick = { onSelect(index) },
+                        onRevealedChange = { open ->
+                            revealedIndex = if (open) {
+                                index
+                            } else if (revealedIndex == index) {
+                                null
+                            } else {
+                                revealedIndex
+                            }
+                        },
+                        onMarkPlayed = { requestMarkPlayed(index) },
+                        onMarkUnplayed = { applyUnplayed(index) },
+                    )
                 }
             }
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp),
-            )
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp),
+        )
         pendingPlayed?.let { indices ->
             val lowest = indices.minOrNull() ?: 0
             val previousCount = (0 until lowest).count { it !in completedChapters }

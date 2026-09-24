@@ -130,15 +130,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun scan(force: Boolean = true) {
         val uri = _state.value.folderUri ?: return
         val generation = ++scanGeneration
-        val showSpinner = force || scanned.isEmpty()
-        if (showSpinner) {
-            _state.value = _state.value.copy(
-                scanning = true,
-                scanDone = 0,
-                scanTotal = 0,
-                scanLabel = null,
-            )
-        } else {
+        val silent = !force && scanned.isNotEmpty()
+        if (!silent) {
             _state.update {
                 it.copy(scanning = true, scanDone = 0, scanTotal = 0, scanLabel = null)
             }
@@ -168,14 +161,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                             book.id to (book to print)
                         }.toMap(),
                         onProgress = { done, total, title ->
-                            postScanUpdate(generation, force = done == 0 || (total > 0 && done == total)) {
-                                _state.update { state ->
-                                    state.copy(
-                                        scanning = true,
-                                        scanDone = done,
-                                        scanTotal = total,
-                                        scanLabel = title,
-                                    )
+                            if (!silent) {
+                                postScanUpdate(generation, force = done == 0 || (total > 0 && done == total)) {
+                                    _state.update { state ->
+                                        state.copy(
+                                            scanning = true,
+                                            scanDone = done,
+                                            scanTotal = total,
+                                            scanLabel = title,
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -186,9 +181,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                                 scanned = snapshotBooks.filter { it.id in keep }
                                 fileFingerprints = snapshotPrints.filterKeys { it in keep }
                                 publishBooks(
-                                    scanning = true,
+                                    scanning = !silent,
                                     scanDone = 0,
-                                    scanTotal = ids.size,
+                                    scanTotal = if (silent) 0 else ids.size,
                                     scanLabel = null,
                                 )
                             }
@@ -200,10 +195,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                                 scanned = snapshotBooks.filter { it.id in keep && it.id !in incoming } + books
                                 fileFingerprints = snapshotPrints.filterKeys { it in keep && it !in incoming } + prints
                                 publishBooks(
-                                    scanning = true,
-                                    scanDone = books.size,
-                                    scanTotal = _state.value.scanTotal.coerceAtLeast(books.size),
-                                    scanLabel = books.lastOrNull()?.title,
+                                    scanning = !silent,
+                                    scanDone = if (silent) 0 else books.size,
+                                    scanTotal = if (silent) {
+                                        0
+                                    } else {
+                                        _state.value.scanTotal.coerceAtLeast(books.size)
+                                    },
+                                    scanLabel = if (silent) null else books.lastOrNull()?.title,
                                 )
                             }
                         },

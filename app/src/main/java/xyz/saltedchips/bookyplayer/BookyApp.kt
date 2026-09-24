@@ -169,6 +169,7 @@ fun BookyApp(
                     } else {
                         playerViewModel.selectBook(book, play = true)
                     }
+                    nowPlaying = true
                 }
             }
         }
