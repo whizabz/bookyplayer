@@ -21,8 +21,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -30,11 +32,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.ColorUtils
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.library.CoverLoader
 import xyz.saltedchips.bookyplayer.settings.PlaceholderCoverStyle
 import xyz.saltedchips.bookyplayer.theme.LocalPlaceholderCoverStyle
-import xyz.saltedchips.bookyplayer.theme.LocalSystemColorScheme
 import xyz.saltedchips.bookyplayer.theme.placeholderFontFamily
 import xyz.saltedchips.bookyplayer.theme.placeholderPolygon
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +69,7 @@ fun BookCover(
         modifier = modifier
             .then(if (square) Modifier.aspectRatio(1f, matchHeightConstraintsFirst = false) else Modifier)
             .clip(shape)
-            .background(LocalSystemColorScheme.current.surfaceContainerHigh),
+            .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
         val image = load.bitmap
@@ -92,11 +94,12 @@ fun EditorialCover(
     style: PlaceholderCoverStyle = LocalPlaceholderCoverStyle.current,
     showTitle: Boolean = true,
 ) {
-    val colors = LocalSystemColorScheme.current
+    val colors = MaterialTheme.colorScheme
     val polygon = placeholderPolygon(style.shapeId, seed)
     val family = remember(style.font, style.weight) {
-        placeholderFontFamily(style)
+        placeholderFontFamily(style.copy(weight = style.weight.coerceAtLeast(500f)))
     }
+    val ink = remember(colors.primary) { accessibleInk(colors.primary) }
     BoxWithConstraints(modifier.fillMaxSize().background(colors.primaryContainer)) {
         val compact = maxWidth < 56.dp
         val blob = maxWidth * 0.82f
@@ -108,9 +111,10 @@ fun EditorialCover(
                 .background(colors.primary),
         )
         if (showTitle) {
+            val inset = if (compact) 4.dp else maxWidth * 0.18f
             Text(
                 text = if (compact) editorialInitials(title) else title,
-                color = colors.onPrimary,
+                color = ink,
                 fontFamily = family,
                 fontSize = if (compact) 16.sp else (maxWidth.value * 0.13f).coerceIn(14f, 34f).sp,
                 lineHeight = if (compact) 18.sp else (maxWidth.value * 0.15f).coerceIn(16f, 38f).sp,
@@ -120,9 +124,17 @@ fun EditorialCover(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .padding(horizontal = if (compact) 4.dp else 10.dp),
+                    .padding(horizontal = inset),
             )
         }
+    }
+}
+
+private fun accessibleInk(background: Color): Color {
+    return if (ColorUtils.calculateLuminance(background.toArgb()) > 0.4) {
+        Color(0xFF121212)
+    } else {
+        Color.White
     }
 }
 
