@@ -120,12 +120,16 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         if (named != null) {
             return ColorTheme.entries.find { it.name == named } ?: ColorTheme.Default
         }
-        if (!prefs.contains(KEY_COLOR_THEME)) return ColorTheme.Default
-        return when (prefs.getInt(KEY_COLOR_THEME, -1)) {
-            0 -> ColorTheme.System
-            1 -> ColorTheme.Book
-            else -> ColorTheme.Default
+        val theme = if (prefs.getInt(KEY_COLOR_THEME, -1) == 1) {
+            ColorTheme.Book
+        } else {
+            ColorTheme.Default
         }
+        prefs.edit()
+            .putString(KEY_COLOR_THEME_NAME, theme.name)
+            .remove(KEY_COLOR_THEME)
+            .apply()
+        return theme
     }
 
     private fun loadAccentColor(): AccentColor {
