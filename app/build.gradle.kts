@@ -84,6 +84,7 @@ dependencies {
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
+    implementation(libs.haze)
 
     testImplementation("junit:junit:4.13.2")
 

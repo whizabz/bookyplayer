@@ -1,6 +1,7 @@
 package xyz.saltedchips.bookyplayer.settings
 
 import android.app.Application
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,8 +13,20 @@ enum class AppearanceMode {
 }
 
 enum class ColorTheme {
+    Default,
     System,
     Book,
+}
+
+enum class AccentColor(val seed: Color) {
+    ElectricBlue(Color(0xFF1565C0)),
+    Violet(Color(0xFF5B4BDB)),
+    ElectricPink(Color(0xFFE91E8C)),
+    Carmine(Color(0xFFC62828)),
+    Ember(Color(0xFFE65100)),
+    Marigold(Color(0xFFF9A825)),
+    Fern(Color(0xFF2E7D32)),
+    Graphite(Color(0xFF546E7A)),
 }
 
 enum class ContrastPreference {
@@ -31,12 +44,11 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
     )
     val mode: StateFlow<AppearanceMode> = _mode
 
-    private val _colorTheme = MutableStateFlow(
-        ColorTheme.entries.getOrElse(prefs.getInt(KEY_COLOR_THEME, ColorTheme.System.ordinal)) {
-            ColorTheme.System
-        },
-    )
+    private val _colorTheme = MutableStateFlow(loadColorTheme())
     val colorTheme: StateFlow<ColorTheme> = _colorTheme
+
+    private val _accentColor = MutableStateFlow(loadAccentColor())
+    val accentColor: StateFlow<AccentColor> = _accentColor
 
     private val _contrastPreference = MutableStateFlow(
         ContrastPreference.entries.getOrElse(
@@ -68,8 +80,16 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun setColorTheme(theme: ColorTheme) {
-        prefs.edit().putInt(KEY_COLOR_THEME, theme.ordinal).apply()
+        prefs.edit()
+            .putString(KEY_COLOR_THEME_NAME, theme.name)
+            .remove(KEY_COLOR_THEME)
+            .apply()
         _colorTheme.value = theme
+    }
+
+    fun setAccentColor(accent: AccentColor) {
+        prefs.edit().putString(KEY_ACCENT_COLOR, accent.name).apply()
+        _accentColor.value = accent
     }
 
     fun setContrastPreference(preference: ContrastPreference) {
@@ -95,6 +115,24 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         _notificationsPrompted.value = prompted
     }
 
+    private fun loadColorTheme(): ColorTheme {
+        val named = prefs.getString(KEY_COLOR_THEME_NAME, null)
+        if (named != null) {
+            return ColorTheme.entries.find { it.name == named } ?: ColorTheme.Default
+        }
+        if (!prefs.contains(KEY_COLOR_THEME)) return ColorTheme.Default
+        return when (prefs.getInt(KEY_COLOR_THEME, -1)) {
+            0 -> ColorTheme.System
+            1 -> ColorTheme.Book
+            else -> ColorTheme.Default
+        }
+    }
+
+    private fun loadAccentColor(): AccentColor {
+        val named = prefs.getString(KEY_ACCENT_COLOR, null)
+        return AccentColor.entries.find { it.name == named } ?: AccentColor.ElectricBlue
+    }
+
     private fun loadPlaceholderCover(): PlaceholderCoverStyle {
         val stored = prefs.getString(KEY_PLACEHOLDER_FONT, null)
         val font = when (stored) {
@@ -115,6 +153,8 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         const val KEY_CIRCULAR_PROGRESS = "circular_library_progress"
         const val KEY_APPEARANCE = "appearance_mode"
         const val KEY_COLOR_THEME = "color_theme"
+        const val KEY_COLOR_THEME_NAME = "color_theme_name"
+        const val KEY_ACCENT_COLOR = "accent_color"
         const val KEY_CONTRAST = "contrast_preference"
         const val KEY_PROGRESS_BAR = "progress_bar_style"
         const val KEY_PLACEHOLDER_SHAPE = "placeholder_cover_shape"

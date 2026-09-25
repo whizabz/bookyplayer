@@ -1,14 +1,21 @@
 package xyz.saltedchips.bookyplayer.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,19 +35,26 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import xyz.saltedchips.bookyplayer.BuildConfig
 import xyz.saltedchips.bookyplayer.R
+import xyz.saltedchips.bookyplayer.settings.AccentColor
 import xyz.saltedchips.bookyplayer.settings.AppearanceMode
 import xyz.saltedchips.bookyplayer.settings.ColorTheme
 import xyz.saltedchips.bookyplayer.settings.ContrastPreference
@@ -51,8 +65,10 @@ import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 fun SettingsScreen(
     appearance: AppearanceMode,
     onAppearanceChange: (AppearanceMode) -> Unit,
-    colorTheme: ColorTheme = ColorTheme.System,
+    colorTheme: ColorTheme = ColorTheme.Default,
     onColorThemeChange: (ColorTheme) -> Unit = {},
+    accentColor: AccentColor = AccentColor.ElectricBlue,
+    onAccentColorChange: (AccentColor) -> Unit = {},
     contrastPreference: ContrastPreference = ContrastPreference.System,
     onContrastPreferenceChange: (ContrastPreference) -> Unit = {},
     skipBackSeconds: Int = 10,
@@ -196,7 +212,7 @@ fun SettingsScreen(
                     ListItem(
                         headlineContent = { Text("Theme") },
                         supportingContent = {
-                            Text("System uses device colors. Book follows cover art")
+                            Text("Default is Booky’s colors. System uses device colors. Book follows cover art")
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
@@ -227,6 +243,12 @@ fun SettingsScreen(
                                 Text(theme.name, maxLines = 1)
                             }
                         }
+                    }
+                    AnimatedVisibility(visible = colorTheme == ColorTheme.Default) {
+                        AccentPicker(
+                            selectedAccent = accentColor,
+                            onAccentSelected = onAccentColorChange,
+                        )
                     }
                     ListItem(
                         headlineContent = { Text("Contrast") },
@@ -393,6 +415,65 @@ private fun SeekPresetButtons(
                 },
             ) {
                 Text("${seconds}s", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccentPicker(
+    selectedAccent: AccentColor,
+    onAccentSelected: (AccentColor) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = { Text("Accent") },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AccentColor.entries.forEachIndexed { index, accent ->
+                val isSelected = accent == selectedAccent
+                val checkTint = if (ColorUtils.calculateLuminance(accent.seed.toArgb()) > 0.5) {
+                    Color.Black
+                } else {
+                    Color.White
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(accent.seed)
+                        .then(
+                            if (isSelected) {
+                                Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .clickable { onAccentSelected(accent) }
+                        .semantics {
+                            role = Role.RadioButton
+                            selected = isSelected
+                            contentDescription = "Accent ${index + 1}"
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            imageVector = BookyIcons.check,
+                            contentDescription = null,
+                            tint = checkTint,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
             }
         }
     }

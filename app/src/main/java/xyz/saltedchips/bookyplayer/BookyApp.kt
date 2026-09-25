@@ -33,6 +33,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import xyz.saltedchips.bookyplayer.data.Audiobook
@@ -57,6 +59,7 @@ fun BookyApp(
 ) {
     val appearance by appearanceViewModel.mode.collectAsStateWithLifecycle()
     val colorTheme by appearanceViewModel.colorTheme.collectAsStateWithLifecycle()
+    val accentColor by appearanceViewModel.accentColor.collectAsStateWithLifecycle()
     val contrastPreference by appearanceViewModel.contrastPreference.collectAsStateWithLifecycle()
     val placeholderCover by appearanceViewModel.placeholderCover.collectAsStateWithLifecycle()
     val notificationsPrompted by appearanceViewModel.notificationsPrompted.collectAsStateWithLifecycle()
@@ -148,6 +151,7 @@ fun BookyApp(
     BookyTheme(
         appearance = appearance,
         colorTheme = colorTheme,
+        accentColor = accentColor,
         contrastPreference = contrastPreference,
         book = player.book,
         placeholderCover = placeholderCover,
@@ -157,6 +161,7 @@ fun BookyApp(
         var detailBookId by rememberSaveable { mutableStateOf<String?>(null) }
         var nowPlaying by rememberSaveable { mutableStateOf(false) }
         val canvas = MaterialTheme.colorScheme.background
+        val hazeState = rememberHazeState()
         val miniPlayerClearance = if (player.book != null) 104.dp else 0.dp
         var cachedDetailBook by remember { mutableStateOf<Audiobook?>(null) }
         val playBook: (Audiobook) -> Unit = { book ->
@@ -195,7 +200,7 @@ fun BookyApp(
                 val screenModifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().hazeSource(hazeState)) {
                     LibraryScreen(
                         books = library.books,
                         activeBookId = player.book?.id,
@@ -331,6 +336,7 @@ fun BookyApp(
                 NowPlayingScreen(
                     player = player,
                     expanded = nowPlaying && !showingSettings && !showingPlaceholderCover,
+                    hazeState = hazeState,
                     onExpandedChange = { nowPlaying = it },
                     onTogglePlay = {
                         if (player.isPlaying) {
@@ -388,6 +394,8 @@ fun BookyApp(
                     onAppearanceChange = appearanceViewModel::setMode,
                     colorTheme = colorTheme,
                     onColorThemeChange = appearanceViewModel::setColorTheme,
+                    accentColor = accentColor,
+                    onAccentColorChange = appearanceViewModel::setAccentColor,
                     contrastPreference = contrastPreference,
                     onContrastPreferenceChange = appearanceViewModel::setContrastPreference,
                     skipBackSeconds = player.skipBackSeconds,

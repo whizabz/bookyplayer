@@ -217,8 +217,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             speed = prefs.getFloat(KEY_SPEED, 1f),
             repeatEnabled = prefs.getBoolean(KEY_REPEAT, false),
             finished = bookPosition >= bookDuration && bookDuration > 1L,
+            smartResumeEnabled = _state.value.smartResumeEnabled,
+            smartResumeSeconds = _state.value.smartResumeSeconds,
+            skipBackSeconds = _state.value.skipBackSeconds,
+            skipForwardSeconds = _state.value.skipForwardSeconds,
         )
         loadChapterProgress(book.id)
+        loadCompletedChapters(book, bookPosition)
         loadCurrentBook(playWhenReady = false, resetPosition = true)
     }
 

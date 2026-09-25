@@ -70,6 +70,44 @@ private fun extractArtworkSeed(context: Context, book: Audiobook): Color? {
 private fun lerp(start: Float, stop: Float, amount: Float): Float =
     start + (stop - start) * amount
 
+internal fun colorSchemeFromAccent(seed: Color, darkTheme: Boolean, contrast: Float): ColorScheme {
+    val scheme = colorSchemeFromArtwork(seed, darkTheme, contrast)
+    if (darkTheme) return scheme
+    val t = contrast.coerceIn(0f, 1f)
+    val container = Color(
+        red = lerp(0.953f, 0.925f, t),
+        green = lerp(0.953f, 0.925f, t),
+        blue = lerp(0.961f, 0.937f, t),
+    )
+    val containerHigh = Color(
+        red = lerp(0.929f, 0.894f, t),
+        green = lerp(0.929f, 0.894f, t),
+        blue = lerp(0.941f, 0.910f, t),
+    )
+    val containerHighest = Color(
+        red = lerp(0.910f, 0.863f, t),
+        green = lerp(0.910f, 0.863f, t),
+        blue = lerp(0.922f, 0.882f, t),
+    )
+    return scheme.copy(
+        background = Color.White,
+        surface = Color.White,
+        surfaceBright = Color.White,
+        surfaceDim = containerHigh,
+        surfaceContainerLowest = Color.White,
+        surfaceContainerLow = Color(0xFFF7F7F8),
+        surfaceContainer = container,
+        surfaceContainerHigh = containerHigh,
+        surfaceContainerHighest = containerHighest,
+        surfaceVariant = containerHighest,
+        outlineVariant = Color(
+            red = lerp(0.86f, 0.74f, t),
+            green = lerp(0.86f, 0.74f, t),
+            blue = lerp(0.87f, 0.76f, t),
+        ),
+    )
+}
+
 internal fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean, contrast: Float): ColorScheme {
     val hsl = FloatArray(3)
     ColorUtils.colorToHSL(seed.toArgb(), hsl)

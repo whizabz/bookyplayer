@@ -125,6 +125,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.round
 import androidx.compose.ui.util.lerp as lerpFloat
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 import xyz.saltedchips.bookyplayer.data.formatClock
 import xyz.saltedchips.bookyplayer.data.formatMinutes
 import xyz.saltedchips.bookyplayer.data.chapterTotal
@@ -155,11 +158,12 @@ private val MiniTransportGap = 6.dp
 private class ExpandedSlotLock {
     var play by mutableStateOf<Offset?>(null)
     var skip by mutableStateOf<Offset?>(null)
+    var skipForward by mutableStateOf<Offset?>(null)
     var title by mutableStateOf<Offset?>(null)
     var titleSize by mutableStateOf<IntSize?>(null)
 }
 private val MiniCoverSize = 40.dp
-private val MiniTitleWidth = 180.dp
+private val MiniTitleWidth = 120.dp
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -181,6 +185,7 @@ fun NowPlayingScreen(
     onRestoreMarks: (ChapterMarksSnapshot) -> Unit,
     onToggleRepeat: () -> Unit,
     onCloseBook: () -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -321,12 +326,14 @@ fun NowPlayingScreen(
             collapseProgress,
         ).coerceAtLeast(0.dp)
         val corner = lerp(0.dp, MiniPlayerHeight / 2f, collapseProgress).coerceAtLeast(0.dp)
+        val miniShape = RoundedCornerShape(corner)
         val scrim = BottomSheetDefaults.ScrimColor
         val flingBehavior = AnchoredDraggableDefaults.flingBehavior(
             state = dragState,
             animationSpec = spatialSpec,
         )
-        val slotsReady = slotLock.play != null && slotLock.skip != null && slotLock.title != null
+        val slotsReady = slotLock.play != null && slotLock.skip != null &&
+            slotLock.skipForward != null && slotLock.title != null
         val probeWidth = fullWidthPx.roundToInt()
         val probeHeight = fullHeightPx.roundToInt()
         if (!slotsReady && probeWidth > 0 && probeHeight > 0) {
@@ -407,12 +414,26 @@ fun NowPlayingScreen(
                 }
                 .width(surfaceWidth)
                 .height(surfaceHeight)
-                .dropShadow(RoundedCornerShape(corner)) {
+                .dropShadow(miniShape) {
                     radius = 28.dp.toPx()
                     color = Color.Black
                     alpha = 0.16f * collapseProgress
                     offset = Offset(0f, 6.dp.toPx())
                 }
+                .clip(miniShape)
+                .then(
+                    if (hazeState != null) {
+                        Modifier.hazeEffect(hazeState) {
+                            blurRadius = (36f * collapseProgress).dp
+                            tints = listOf(
+                                HazeTint(miniContainer.copy(alpha = 0.26f * collapseProgress)),
+                            )
+                            noiseFactor = 0.03f * collapseProgress
+                        }
+                    } else {
+                        Modifier
+                    },
+                )
                 .draggable(
                     state = dismissDrag,
                     orientation = Orientation.Horizontal,
@@ -440,10 +461,10 @@ fun NowPlayingScreen(
                     enabled = chapterProgress < 0.98f,
                     flingBehavior = flingBehavior,
                 ),
-            shape = RoundedCornerShape(corner),
+            shape = miniShape,
             color = lerpColor(
                 colors.surface,
-                miniContainer,
+                miniContainer.copy(alpha = 0.18f),
                 colorProgress,
             ),
             contentColor = colors.onSurface,
@@ -470,7 +491,10 @@ fun NowPlayingScreen(
                 miniSurfaceLeftPx = (fullWidthPx - screenOffsetPx * 2f - miniWidthPx) / 2f +
                     screenOffsetPx,
                 miniSurfaceTopPx = fullHeightPx - navPx - screenOffsetPx - miniHeightPx,
-                transportSettled = !dragState.isAnimationRunning && collapseProgress < 0.02f,
+                transportSettled = !dragState.isAnimationRunning &&
+                    (dragState.settledValue == PlayerAnchor.Expanded ||
+                        dragState.settledValue == PlayerAnchor.Chapters) &&
+                    collapseProgress < 0.02f,
                 slotLock = slotLock,
                 onExpand = { settleTo(PlayerAnchor.Expanded) },
                 onTogglePlay = onTogglePlay,
@@ -606,6 +630,7 @@ private fun NowPlayingContent(
     var parentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var playSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var skipSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var skipForwardSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var titleSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val chapterDuration = player.chapterDurationMs.toFloat().coerceAtLeast(1f)
     val chapterPosition = player.chapterPositionMs.toFloat().coerceIn(0f, chapterDuration)
@@ -632,17 +657,16 @@ private fun NowPlayingContent(
     )
     val measuredPlay = slotOffset(parentCoords, playSlot)
     val measuredSkip = slotOffset(parentCoords, skipSlot)
+    val measuredSkipForward = slotOffset(parentCoords, skipForwardSlot)
     val measuredTitle = slotOffset(parentCoords, titleSlot)
     val measuredTitleSize = titleSlot?.takeIf { it.isAttached }?.size
     SideEffect {
         if (measurementOnly) {
             measuredPlay?.let { slotLock.play = it }
             measuredSkip?.let { slotLock.skip = it }
+            measuredSkipForward?.let { slotLock.skipForward = it }
             measuredTitle?.let { slotLock.title = it }
             measuredTitleSize?.let { slotLock.titleSize = it }
-        } else if (transportSettled) {
-            measuredPlay?.let { slotLock.play = it }
-            measuredSkip?.let { slotLock.skip = it }
         }
     }
     val titleExpandedOffset = slotLock.title
@@ -651,49 +675,43 @@ private fun NowPlayingContent(
             coverExpandedOffset.y + coverExpandedSize + with(density) { 16.dp.toPx() },
         )
     val playExpandedOffset = slotLock.play
-        ?: measuredPlay.takeIf { transportSettled }
         ?: Offset(
             (fullWidthPx - playW) / 2f,
             fullHeightPx * 0.72f,
         )
     val skipExpandedOffset = slotLock.skip
-        ?: measuredSkip.takeIf { transportSettled }
         ?: Offset(
             playExpandedOffset.x - with(density) { 2.dp.toPx() } - skipW,
+            playExpandedOffset.y + (playH - skipH) / 2f,
+        )
+    val skipForwardExpandedOffset = slotLock.skipForward
+        ?: Offset(
+            playExpandedOffset.x + playW + with(density) { 2.dp.toPx() },
             playExpandedOffset.y + (playH - skipH) / 2f,
         )
     val coverCollapsedOffset = Offset(
         with(density) { MiniPlayerInset.toPx() },
         (miniHeightPx - coverCollapsedPx) / 2f,
     )
+    val skipForwardCollapsedLocal = Offset(
+        miniWidthPx - with(density) { MiniPlayerInset.toPx() } - skipCollapsedW,
+        (miniHeightPx - skipCollapsedH) / 2f,
+    )
     val playCollapsedLocal = Offset(
-        miniWidthPx - with(density) { MiniPlayerInset.toPx() } - playCollapsedW,
+        skipForwardCollapsedLocal.x - with(density) { MiniTransportGap.toPx() } - playCollapsedW,
         (miniHeightPx - playCollapsedH) / 2f,
     )
     val skipCollapsedLocal = Offset(
         playCollapsedLocal.x - with(density) { MiniTransportGap.toPx() } - skipCollapsedW,
         (miniHeightPx - skipCollapsedH) / 2f,
     )
-    val playExpandedScreen = Offset(
-        playExpandedOffset.x,
-        playExpandedOffset.y,
+    val playOffset = lerpOffset(playExpandedOffset, playCollapsedLocal, collapseProgress)
+    val skipOffset = lerpOffset(skipExpandedOffset, skipCollapsedLocal, collapseProgress)
+    val skipForwardOffset = lerpOffset(
+        skipForwardExpandedOffset,
+        skipForwardCollapsedLocal,
+        collapseProgress,
     )
-    val skipExpandedScreen = Offset(
-        skipExpandedOffset.x,
-        skipExpandedOffset.y,
-    )
-    val playMiniScreen = Offset(
-        miniSurfaceLeftPx + playCollapsedLocal.x,
-        miniSurfaceTopPx + playCollapsedLocal.y,
-    )
-    val skipMiniScreen = Offset(
-        miniSurfaceLeftPx + skipCollapsedLocal.x,
-        miniSurfaceTopPx + skipCollapsedLocal.y,
-    )
-    val playScreen = lerpOffset(playExpandedScreen, playMiniScreen, collapseProgress)
-    val skipScreen = lerpOffset(skipExpandedScreen, skipMiniScreen, collapseProgress)
-    val playOffset = Offset(playScreen.x - surfaceLeftPx, playScreen.y - surfaceTopPx)
-    val skipOffset = Offset(skipScreen.x - surfaceLeftPx, skipScreen.y - surfaceTopPx)
     val titleCollapsedOffset = Offset(
         coverCollapsedOffset.x + coverCollapsedPx + with(density) { 12.dp.toPx() },
         with(density) { MiniPlayerInset.toPx() },
@@ -708,7 +726,6 @@ private fun NowPlayingContent(
     val expandedTitleWidth = slotLock.titleSize?.let { with(density) { it.width.toDp() } }
         ?: with(density) { (fullWidthPx - padExpPx * 2f).toDp() }
     val coverCorner = lerp(16.dp, MiniCoverSize / 2f, collapseProgress)
-    val showTransportOverlay = !measurementOnly && !transportSettled
 
     Box(
         modifier
@@ -866,11 +883,11 @@ private fun NowPlayingContent(
                     transportItem(
                         menuLabel = "Back ${player.skipBackSeconds} seconds",
                         onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
-                        enabled = !showTransportOverlay,
-                        animatePress = !measurementOnly,
+                        enabled = false,
+                        animatePress = false,
                         modifier = Modifier
                             .onGloballyPositioned { skipSlot = it }
-                            .graphicsLayer { alpha = if (showTransportOverlay) 0f else 1f },
+                            .graphicsLayer { alpha = 0f },
                         icon = {
                             Icon(
                                 BookyIcons.skipBack,
@@ -885,7 +902,7 @@ private fun NowPlayingContent(
                             FilledIconToggleButton(
                                 checked = player.isPlaying,
                                 onCheckedChange = { onTogglePlay() },
-                                enabled = !showTransportOverlay,
+                                enabled = false,
                                 shapes = IconButtonDefaults.toggleableShapes(
                                     shape = IconButtonDefaults.extraLargeRoundShape,
                                     pressedShape = IconButtonDefaults.extraLargeRoundShape,
@@ -900,14 +917,7 @@ private fun NowPlayingContent(
                                 modifier = Modifier
                                     .size(IconButtonDefaults.extraLargeContainerSize())
                                     .onGloballyPositioned { playSlot = it }
-                                    .then(
-                                        if (measurementOnly) {
-                                            Modifier
-                                        } else {
-                                            Modifier.animateWidth(interactionSource)
-                                        },
-                                    )
-                                    .graphicsLayer { alpha = if (showTransportOverlay) 0f else 1f },
+                                    .graphicsLayer { alpha = 0f },
                                 interactionSource = interactionSource,
                             ) {
                                 Icon(
@@ -944,7 +954,11 @@ private fun NowPlayingContent(
                     transportItem(
                         menuLabel = "Forward ${player.skipForwardSeconds} seconds",
                         onClick = { onSkip(player.skipForwardSeconds * 1_000L) },
-                        animatePress = !measurementOnly,
+                        enabled = false,
+                        animatePress = false,
+                        modifier = Modifier
+                            .onGloballyPositioned { skipForwardSlot = it }
+                            .graphicsLayer { alpha = 0f },
                         icon = {
                             Icon(
                                 BookyIcons.skipForward,
@@ -1074,7 +1088,7 @@ private fun NowPlayingContent(
                     },
                 ),
         )
-        if (showTransportOverlay) {
+        if (!measurementOnly) {
             CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                 FilledTonalIconButton(
                     onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
@@ -1123,6 +1137,29 @@ private fun NowPlayingContent(
                         modifier = Modifier.size(
                             lerp(
                                 IconButtonDefaults.extraLargeIconSize,
+                                24.dp,
+                                collapseProgress,
+                            ),
+                        ),
+                    )
+                }
+                FilledTonalIconButton(
+                    onClick = { onSkip(player.skipForwardSeconds * 1_000L) },
+                    shapes = IconButtonDefaults.shapes(
+                        shape = IconButtonDefaults.largeRoundShape,
+                        pressedShape = IconButtonDefaults.largePressedShape,
+                    ),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(),
+                    modifier = Modifier
+                        .offset { skipForwardOffset.round() }
+                        .requiredSize(skipSize),
+                ) {
+                    Icon(
+                        BookyIcons.skipForward,
+                        contentDescription = "Forward ${player.skipForwardSeconds} seconds",
+                        modifier = Modifier.size(
+                            lerp(
+                                IconButtonDefaults.largeIconSize,
                                 24.dp,
                                 collapseProgress,
                             ),
