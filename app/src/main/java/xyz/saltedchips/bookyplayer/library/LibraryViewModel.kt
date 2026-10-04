@@ -69,7 +69,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             refreshFolderName(Uri.parse(folderUri))
             val catalog = LibraryCatalogStore.load(getApplication())
             if (catalog != null && catalog.folderUri == folderUri) {
-                scanned = catalog.books
+                scanned = catalog.books.map { it.withRepairedText() }
                 fileFingerprints = catalog.fileFingerprints
                 treeFingerprint = catalog.treeFingerprint
                 publishBooks(scanning = false)
@@ -144,7 +144,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             var discoveredIds = snapshotBooks.map { it.id }.toSet()
             val result = withContext(Dispatchers.IO) {
                 try {
-                    if (!force && snapshotBooks.isNotEmpty() && storedFingerprint != null) {
+                    if (!force && snapshotBooks.isNotEmpty() && storedFingerprint != null &&
+                        snapshotBooks.none { book ->
+                            val healed = book.withRepairedText()
+                            MetadataText.isWeakName(healed.title) ||
+                                healed.chapterTitles.any(MetadataText::looksGarbled)
+                        }
+                    ) {
                         val fingerprint = scanner.treeFingerprint(tree)
                         if (fingerprint == storedFingerprint) {
                             return@withContext LibraryScanResult(
@@ -212,13 +218,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
             if (generation != scanGeneration) return@launch
-            scanned = result.books
+            scanned = result.books.map { it.withRepairedText() }
             fileFingerprints = result.fileFingerprints
             treeFingerprint = result.treeFingerprint.ifBlank { treeFingerprint }
-            if (result.books.isNotEmpty() && result.treeFingerprint.isNotBlank()) {
+            if (scanned.isNotEmpty() && result.treeFingerprint.isNotBlank()) {
                 LibraryCatalogStore.save(
                     getApplication(),
-                    LibraryCatalog(uri, result.treeFingerprint, result.books, result.fileFingerprints),
+                    LibraryCatalog(uri, result.treeFingerprint, scanned, result.fileFingerprints),
                 )
             }
             publishBooks(
@@ -317,17 +323,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             .map { book ->
                 val extra = metadata[book.id]
                 val titles = extra?.optJSONArray("chapters")?.let { array ->
-                    List(array.length()) { index -> array.optString(index) }
+                    List(array.length()) { index -> MetadataText.repair(array.optString(index)) }
                         .takeIf { it.size == book.chapterTitles.size }
-                }
+                } ?: book.chapterTitles
                 val chapterIndex = (book.currentChapter - 1).coerceAtLeast(0)
                 val customCover = extra?.optString("coverUri").orEmpty().ifBlank { null }
-                book.copy(
-                    title = extra?.optString("title")?.ifBlank { book.title } ?: book.title,
-                    author = extra?.optString("author")?.ifBlank { book.author } ?: book.author,
-                    narrator = extra?.optString("narrator")?.ifBlank { book.narrator } ?: book.narrator,
-                    chapterTitles = titles ?: book.chapterTitles,
-                    currentChapterTitle = titles?.getOrNull(chapterIndex) ?: book.currentChapterTitle,
+                val healed = book.withRepairedText()
+                healed.copy(
+                    title = MetadataText.preferredLabel(
+                        extra?.optString("title").orEmpty().ifBlank { healed.title },
+                        healed.title,
+                    ),
+                    author = MetadataText.repair(
+                        extra?.optString("author").orEmpty().ifBlank { healed.author },
+                    ),
+                    narrator = MetadataText.repair(
+                        extra?.optString("narrator").orEmpty().ifBlank { healed.narrator },
+                    ),
+                    chapterTitles = titles,
+                    currentChapterTitle = titles.getOrNull(chapterIndex) ?: healed.currentChapterTitle,
                     coverUri = customCover ?: book.coverUri,
                     listenedMs = listened[book.id] ?: book.listenedMs,
                     lastPlayedMs = lastPlayed[book.id] ?: 0L,

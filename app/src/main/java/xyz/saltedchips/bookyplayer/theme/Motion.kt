@@ -13,7 +13,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MotionScheme
 
-private const val PredictivePopMillis = 220
+private const val PredictivePeekMillis = 220
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 fun MotionScheme.overlayEnter(): EnterTransition {
@@ -23,14 +23,21 @@ fun MotionScheme.overlayEnter(): EnterTransition {
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-fun MotionScheme.overlayExit(): ExitTransition {
+fun MotionScheme.overlayPopExit(): ExitTransition {
+    return fadeOut(defaultEffectsSpec()) +
+        slideOutHorizontally(defaultSpatialSpec()) { it / 8 } +
+        scaleOut(defaultSpatialSpec(), targetScale = 0.92f)
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+fun MotionScheme.overlayPeekExit(): ExitTransition {
     return fadeOut(
-        tween(durationMillis = PredictivePopMillis, easing = LinearEasing),
+        tween(durationMillis = PredictivePeekMillis, easing = LinearEasing),
         targetAlpha = 0.92f,
     ) + scaleOut(
-        tween(durationMillis = PredictivePopMillis, easing = LinearEasing),
+        tween(durationMillis = PredictivePeekMillis, easing = LinearEasing),
         targetScale = 0.9f,
     ) + slideOutHorizontally(
-        tween(durationMillis = PredictivePopMillis, easing = LinearEasing),
+        tween(durationMillis = PredictivePeekMillis, easing = LinearEasing),
     ) { it / 14 }
 }

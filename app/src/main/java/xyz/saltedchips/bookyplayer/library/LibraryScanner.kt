@@ -92,8 +92,8 @@ class LibraryScanner(private val context: Context) {
         if (!libraryRoot && media.isNotEmpty()) {
             pending += PendingBook(
                 id = dir.uri.toString(),
-                title = dir.name ?: MediaKinds.stem(media.first().name ?: "Audiobook"),
-                author = authorHint?.takeIf { it.isNotBlank() } ?: "Unknown",
+                title = MetadataText.repair(dir.name ?: MediaKinds.stem(media.first().name ?: "Audiobook")),
+                author = MetadataText.repair(authorHint?.takeIf { it.isNotBlank() } ?: "Unknown"),
                 media = media,
                 coverUri = findCover(files)?.uri?.toString(),
             )
@@ -107,7 +107,7 @@ class LibraryScanner(private val context: Context) {
             for (file in media) {
                 pending += PendingBook(
                     id = file.uri.toString(),
-                    title = MediaKinds.stem(file.name ?: "Audiobook"),
+                    title = MetadataText.repair(MediaKinds.stem(file.name ?: "Audiobook")),
                     author = "Unknown",
                     media = listOf(file),
                     coverUri = null,
@@ -139,19 +139,20 @@ class LibraryScanner(private val context: Context) {
     ) {
         val fingerprint = fileFingerprint(media, coverUri)
         fingerprints[id] = fingerprint
+        val cleanedTitle = MetadataText.repair(title)
         val cached = cache[id]
-        if (cached != null && cached.second == fingerprint) {
-            val book = cached.first
+        if (cached != null && cached.second == fingerprint && !MetadataText.isWeakName(cleanedTitle)) {
+            val book = cached.first.withRepairedText()
             books += book.copy(
-                title = title,
-                author = if (book.author != "Unknown") book.author else author,
+                title = cleanedTitle,
+                author = if (book.author != "Unknown") book.author else MetadataText.repair(author),
                 coverUri = coverUri,
-                fileName = media.first().name ?: book.fileName,
+                fileName = MetadataText.repair(media.first().name ?: book.fileName),
                 addedAtMs = media.minOf { file -> file.lastModified().takeIf { it > 0L } ?: 0L },
             )
             return
         }
-        books += bookFrom(id, title, author, media, coverUri)
+        books += bookFrom(id, cleanedTitle, MetadataText.repair(author), media, coverUri)
     }
 
     private fun fileFingerprint(media: List<DocumentFile>, coverUri: String?): String {
@@ -194,6 +195,7 @@ class LibraryScanner(private val context: Context) {
         val chapterStarts = mutableListOf<Long>()
         var narrator = ""
         var taggedAuthor: String? = null
+        var taggedTitle: String? = null
         val retriever = MediaMetadataRetriever()
         try {
             for (file in media) {
@@ -204,6 +206,10 @@ class LibraryScanner(private val context: Context) {
                     fileDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull() ?: 0L
                     if (file == first) {
+                        taggedTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                            ?.trim()?.takeIf { it.isNotEmpty() }
+                            ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                                ?.trim()?.takeIf { it.isNotEmpty() }
                         narrator = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER)
                             ?.trim().orEmpty()
                         taggedAuthor = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
@@ -225,13 +231,15 @@ class LibraryScanner(private val context: Context) {
                 if (embedded.size >= 2) {
                     for (clip in embedded) {
                         mediaUris += uri
-                        chapterTitles += clip.title
+                        chapterTitles += MetadataText.repair(clip.title)
                         chapterDurations += clip.durationMs
                         chapterStarts += clip.startMs
                     }
                 } else {
                     mediaUris += uri
-                    chapterTitles += MediaKinds.stem(file.name ?: "Chapter ${mediaUris.size}")
+                    chapterTitles += MetadataText.repair(
+                        MediaKinds.stem(file.name ?: "Chapter ${mediaUris.size}"),
+                    )
                     chapterDurations += fileDuration
                     chapterStarts += 0L
                 }
@@ -241,16 +249,16 @@ class LibraryScanner(private val context: Context) {
         }
         return Audiobook(
             id = id,
-            title = title,
-            author = taggedAuthor ?: author,
-            narrator = narrator.ifBlank { "Unknown" },
+            title = MetadataText.preferredLabel(title, taggedTitle),
+            author = taggedAuthor?.let(MetadataText::repair) ?: author,
+            narrator = MetadataText.repair(narrator).ifBlank { "Unknown" },
             chapterCount = chapterTitles.size,
             fileCount = media.size,
             durationMs = chapterDurations.sum(),
             listenedMs = 0L,
             currentChapter = 1,
             currentChapterTitle = chapterTitles.first(),
-            fileName = first.name ?: title,
+            fileName = MetadataText.repair(first.name ?: title),
             coverUri = coverUri,
             artworkFileUri = first.uri.toString(),
             mediaUris = mediaUris,

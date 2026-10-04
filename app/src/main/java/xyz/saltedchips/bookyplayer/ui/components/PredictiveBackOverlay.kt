@@ -18,7 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CancellationException
 import xyz.saltedchips.bookyplayer.theme.overlayEnter
-import xyz.saltedchips.bookyplayer.theme.overlayExit
+import xyz.saltedchips.bookyplayer.theme.overlayPeekExit
+import xyz.saltedchips.bookyplayer.theme.overlayPopExit
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -73,7 +74,7 @@ fun PredictiveBackOverlay(
         visible = { it },
         modifier = modifier.fillMaxSize(),
         enter = motion.overlayEnter(),
-        exit = motion.overlayExit(),
+        exit = if (seeking) motion.overlayPeekExit() else motion.overlayPopExit(),
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),

@@ -398,9 +398,11 @@ object Mp4ChapterReader {
             if (bom == 0xFEFF || bom == 0xFFFE) {
                 val charset = if (bom == 0xFEFF) Charsets.UTF_16BE else Charset.forName("UTF-16LE")
                 return bytes.toString(charset).trim { it <= ' ' || it == '\u0000' }
+                    .let(MetadataText::repair)
             }
         }
         return bytes.toString(Charsets.UTF_8).trim { it <= ' ' || it == '\u0000' }
+            .let(MetadataText::repair)
     }
 
     private fun fourCc(value: Int): String {
