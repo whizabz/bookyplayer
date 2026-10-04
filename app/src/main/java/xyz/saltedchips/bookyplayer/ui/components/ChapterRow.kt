@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -14,7 +13,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -24,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,7 +96,7 @@ fun ChapterRow(
         progress <= 0f -> if (durationMs > 0L) formatMinutes(durationMs) else ""
         else -> "${formatMinutes(remaining)} left"
     }
-    val showProgress = !finished && progress > 0.02f && progress < 0.98f
+    val showProgress = !finished && progress > 0f
     Surface(
         shape = itemShapes.shape,
         color = container,
@@ -110,6 +107,9 @@ fun ChapterRow(
             .graphicsLayer { alpha = if (faded) 0.6f else 1f },
     ) {
         Box {
+            if (showProgress) {
+                RowProgressFill(progress, scheme.primary.copy(alpha = 0.28f))
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -158,18 +158,6 @@ fun ChapterRow(
                         modifier = Modifier.size(22.dp),
                     )
                 }
-            }
-            if (showProgress) {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(4.dp),
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
-                )
             }
         }
     }

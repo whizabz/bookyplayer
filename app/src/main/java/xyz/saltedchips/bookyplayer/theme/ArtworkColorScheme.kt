@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
+import kotlin.math.ln
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.library.CoverLoader
 
@@ -34,6 +35,7 @@ fun rememberArtworkColorScheme(
         darkTheme,
         fallback,
         contrastAmount,
+        ARTWORK_SEED_VERSION,
     ) {
         val extracted = book?.let { extractArtworkSeed(context, it) }
         if (extracted != null) {
@@ -54,24 +56,43 @@ private fun cachedArtworkSeed(prefs: SharedPreferences): Color? {
 private fun extractArtworkSeed(context: Context, book: Audiobook): Color? {
     val bitmap = CoverLoader.load(context, book, sampleSize = 8) ?: return null
     return try {
-        val palette = Palette.from(bitmap).clearFilters().generate()
-        val rgb = palette.vibrantSwatch?.rgb
-            ?: palette.lightVibrantSwatch?.rgb
-            ?: palette.darkVibrantSwatch?.rgb
-            ?: palette.mutedSwatch?.rgb
-            ?: palette.dominantSwatch?.rgb
-            ?: return null
+        val palette = Palette.from(bitmap).clearFilters().maximumColorCount(24).generate()
+        val rgb = pickArtworkSeed(palette) ?: return null
         Color(rgb)
     } finally {
         bitmap.recycle()
     }
 }
 
+private fun pickArtworkSeed(palette: Palette): Int? {
+    val swatches = palette.swatches
+    if (swatches.isEmpty()) return null
+    return swatches.maxByOrNull(::artworkSeedScore)?.rgb
+}
+
+private fun artworkSeedScore(swatch: Palette.Swatch): Float {
+    val sat = swatch.hsl[1]
+    val light = swatch.hsl[2]
+    val pop = ln(1f + swatch.population)
+    if (light > 0.82f) return pop * 0.04f
+    if (light < 0.08f && sat < 0.12f) return pop * 0.06f
+    val darkness = (1f - light).coerceIn(0f, 1f)
+    val tone = when {
+        light < 0.18f -> 0.7f
+        light < 0.48f -> 1f
+        light < 0.62f -> 0.45f
+        else -> 0.18f
+    }
+    val colorfulness = if (sat < 0.08f) 0.3f else 0.55f + 0.45f * sat
+    val brightPenalty = if (light > 0.55f && sat > 0.5f) 0.28f else 1f
+    return pop * darkness * tone * colorfulness * brightPenalty
+}
+
 private fun lerp(start: Float, stop: Float, amount: Float): Float =
     start + (stop - start) * amount
 
 internal fun colorSchemeFromAccent(seed: Color, darkTheme: Boolean, contrast: Float): ColorScheme {
-    val scheme = colorSchemeFromArtwork(seed, darkTheme, contrast)
+    val scheme = colorSchemeFromArtwork(seed, darkTheme, contrast, chromaMax = 0.38f)
     if (darkTheme) return scheme
     val t = contrast.coerceIn(0f, 1f)
     val container = Color(
@@ -108,11 +129,16 @@ internal fun colorSchemeFromAccent(seed: Color, darkTheme: Boolean, contrast: Fl
     )
 }
 
-internal fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean, contrast: Float): ColorScheme {
+internal fun colorSchemeFromArtwork(
+    seed: Color,
+    darkTheme: Boolean,
+    contrast: Float,
+    chromaMax: Float = 0.72f,
+): ColorScheme {
     val hsl = FloatArray(3)
     ColorUtils.colorToHSL(seed.toArgb(), hsl)
     val hue = hsl[0]
-    val chroma = hsl[1].coerceIn(0.18f, 0.72f)
+    val chroma = hsl[1].coerceIn(0.16f, chromaMax.coerceAtLeast(0.16f))
     val t = contrast.coerceIn(0f, 1f)
 
     fun tone(lightness: Float, saturation: Float = chroma) =
@@ -242,3 +268,4 @@ internal fun colorSchemeFromArtwork(seed: Color, darkTheme: Boolean, contrast: F
 
 private const val PREFS_NAME = "booky_prefs"
 private const val KEY_ARTWORK_SEED = "last_artwork_seed"
+private const val ARTWORK_SEED_VERSION = 2

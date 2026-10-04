@@ -19,14 +19,14 @@ enum class ColorTheme {
 }
 
 enum class AccentColor(val seed: Color) {
-    ElectricBlue(Color(0xFF1565C0)),
-    Violet(Color(0xFF5B4BDB)),
-    ElectricPink(Color(0xFFE91E8C)),
-    Carmine(Color(0xFFC62828)),
-    Ember(Color(0xFFE65100)),
-    Marigold(Color(0xFFF9A825)),
-    Fern(Color(0xFF2E7D32)),
-    Graphite(Color(0xFF546E7A)),
+    ElectricBlue(Color(0xFF9BB8D9)),
+    Violet(Color(0xFFC5B4E3)),
+    ElectricPink(Color(0xFFE8B7C9)),
+    Carmine(Color(0xFFE3B6B6)),
+    Ember(Color(0xFFEDC8B0)),
+    Marigold(Color(0xFFE8D9A8)),
+    Fern(Color(0xFFB5D1BE)),
+    Graphite(Color(0xFFB7BDC4)),
 }
 
 enum class ContrastPreference {

@@ -105,7 +105,7 @@ fun SettingsScreen(
                         Icon(BookyIcons.back, contentDescription = "Back")
                     }
                 },
-                windowInsets = WindowInsets(0),
+                windowInsets = TopAppBarDefaults.windowInsets,
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,

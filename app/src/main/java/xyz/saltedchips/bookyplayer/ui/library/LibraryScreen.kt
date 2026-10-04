@@ -74,6 +74,7 @@ import xyz.saltedchips.bookyplayer.data.formatDuration
 import xyz.saltedchips.bookyplayer.library.LibrarySort
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
+import xyz.saltedchips.bookyplayer.ui.components.RowProgressFill
 import xyz.saltedchips.bookyplayer.ui.components.SwipeToRevealActions
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -505,6 +506,9 @@ private fun LibraryRow(
         modifier = Modifier.clip(itemShapes.shape),
     ) {
         Box {
+            if (showProgress) {
+                RowProgressFill(progress, scheme.primary.copy(alpha = 0.28f))
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -562,18 +566,6 @@ private fun LibraryRow(
                         }
                     }
                 }
-            }
-            if (showProgress) {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(4.dp),
-                    strokeCap = StrokeCap.Round,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
-                )
             }
         }
     }
