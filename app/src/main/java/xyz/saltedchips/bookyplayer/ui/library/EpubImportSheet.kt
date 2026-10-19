@@ -2,6 +2,16 @@ package xyz.saltedchips.bookyplayer.ui.library
 
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import xyz.saltedchips.bookyplayer.tts.VoiceGender
+import xyz.saltedchips.bookyplayer.tts.VoiceAccent
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -73,52 +83,7 @@ fun EpubImportSheet(
             if (!state.modelInstalled) {
                 VoiceModelStep(state, onDownload, onCancelDownload)
             } else {
-                Text("Voice", style = MaterialTheme.typography.titleSmall)
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 280.dp),
-                ) {
-                    items(KokoroVoices.english, key = { it.sid }) { voice ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .selectable(
-                                    selected = state.voiceSid == voice.sid,
-                                    onClick = { onSelectVoice(voice.sid) },
-                                    role = Role.RadioButton,
-                                )
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = state.voiceSid == voice.sid, onClick = null)
-                            Text(
-                                voice.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 12.dp),
-                            )
-                            IconButton(
-                                onClick = { onPreviewVoice(voice.sid) },
-                                enabled = state.previewingSid == null,
-                            ) {
-                                if (state.previewingSid == voice.sid) {
-                                    androidx.compose.material3.CircularProgressIndicator(
-                                        modifier = Modifier.size(22.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                } else {
-                                    Icon(
-                                        BookyIcons.play,
-                                        contentDescription = "Preview ${voice.label}",
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                VoicePicker(state, onSelectVoice, onPreviewVoice)
                 Text(
                     "Conversion runs in the background and can take a few hours for a long book. " +
                         "You can start listening once the first chapter is ready.",
@@ -187,6 +152,105 @@ private fun VoiceModelStep(
             Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onCancelDownload) { Text("Cancel download") }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VoicePicker(
+    state: EpubImportUiState,
+    onSelectVoice: (Int) -> Unit,
+    onPreviewVoice: (Int) -> Unit,
+) {
+    val selected = KokoroVoices.bySid(state.voiceSid)
+    var accent by remember { mutableStateOf(selected.accent) }
+    var gender by remember { mutableStateOf(selected.gender) }
+    val scheme = MaterialTheme.colorScheme
+    val chipColors = FilterChipDefaults.filterChipColors(
+        containerColor = scheme.secondaryContainer,
+        labelColor = scheme.onSecondaryContainer,
+        selectedContainerColor = scheme.primary,
+        selectedLabelColor = scheme.onPrimary,
+    )
+
+    Text("Voice", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Selected: ${selected.label}",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        VoiceAccent.entries.forEach { option ->
+            FilterChip(
+                modifier = Modifier.height(40.dp),
+                selected = accent == option,
+                onClick = { accent = option },
+                label = { Text(option.label) },
+                shape = RoundedCornerShape(12.dp),
+                border = null,
+                colors = chipColors,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        VoiceGender.entries.forEach { option ->
+            FilterChip(
+                modifier = Modifier.height(40.dp),
+                selected = gender == option,
+                onClick = { gender = option },
+                label = { Text(option.label) },
+                shape = RoundedCornerShape(12.dp),
+                border = null,
+                colors = chipColors,
+            )
+        }
+    }
+    val voices = KokoroVoices.english.filter { it.accent == accent && it.gender == gender }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 260.dp)
+            .padding(top = 8.dp),
+    ) {
+        items(voices, key = { it.sid }) { voice ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = state.voiceSid == voice.sid,
+                        onClick = { onSelectVoice(voice.sid) },
+                        role = Role.RadioButton,
+                    )
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = state.voiceSid == voice.sid, onClick = null)
+                Text(
+                    voice.displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp),
+                )
+                IconButton(
+                    onClick = { onPreviewVoice(voice.sid) },
+                    enabled = state.previewingSid == null,
+                ) {
+                    if (state.previewingSid == voice.sid) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            BookyIcons.play,
+                            contentDescription = "Preview ${voice.label}",
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }

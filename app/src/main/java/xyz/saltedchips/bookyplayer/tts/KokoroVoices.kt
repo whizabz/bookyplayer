@@ -1,7 +1,15 @@
 package xyz.saltedchips.bookyplayer.tts
 
 /** A Kokoro v1.0 speaker. [sid] is the speaker id the engine expects. */
-data class KokoroVoice(val sid: Int, val name: String, val label: String)
+enum class VoiceAccent(val label: String) { US("US"), UK("UK") }
+
+enum class VoiceGender(val label: String) { Female("Female"), Male("Male") }
+
+data class KokoroVoice(val sid: Int, val name: String, val label: String) {
+    val accent: VoiceAccent get() = if (name.startsWith("a")) VoiceAccent.US else VoiceAccent.UK
+    val gender: VoiceGender get() = if (name.getOrNull(1) == 'f') VoiceGender.Female else VoiceGender.Male
+    val displayName: String get() = label.substringBefore(" ·")
+}
 
 /** The US and UK English voices of kokoro-multi-lang-v1_0 (speaker ids 0-27). */
 object KokoroVoices {
