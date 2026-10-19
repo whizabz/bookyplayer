@@ -3,6 +3,16 @@ package xyz.saltedchips.bookyplayer.ui.player
 import android.content.Context
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.material3.Icon
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -35,10 +45,9 @@ import xyz.saltedchips.bookyplayer.epub.EpubChapter
 import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.tts.Cue
+import xyz.saltedchips.bookyplayer.tts.HIGHLIGHT_LAG_MS
 import xyz.saltedchips.bookyplayer.tts.Paragraphs
 import xyz.saltedchips.bookyplayer.tts.TimingFile
-
-private const val HIGHLIGHT_LAG_MS = 350L
 
 /** The spoken pieces of one chapter: the text of each, and when its audio starts. */
 class ReadAlongData(val lines: List<String>, val startsMs: List<Long>) {
@@ -105,7 +114,8 @@ private fun loadReadAlong(context: Context, book: Audiobook, chapterIndex: Int, 
 
 /**
  * Lyrics-style reading view: the piece being spoken sits in the middle at full strength, and the
- * text above and below it fades away towards the top and bottom edges.
+ * text above and below it fades away towards the top and bottom edges. Scrolling away pauses the
+ * following; a small button brings you back to the spoken text.
  */
 @Composable
 fun ReadAlongView(
@@ -117,55 +127,89 @@ fun ReadAlongView(
     // Switch a moment after the next piece begins, so the text never runs ahead of the voice.
     val active = data.activeIndex(positionMs - HIGHLIGHT_LAG_MS).coerceAtLeast(0)
     val listState = rememberLazyListState()
-    LaunchedEffect(active, data.lines.size) {
-        if (data.lines.isNotEmpty()) listState.animateScrollToItem(active)
+    var following by remember { mutableStateOf(true) }
+    var programmatic by remember { mutableStateOf(false) }
+    val activeVisible by remember(active) {
+        derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.index == active } }
     }
-    BoxWithConstraints(
-        modifier = modifier
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.2f to Color.Black,
-                        0.7f to Color.Black,
-                        1f to Color.Transparent,
-                    ),
-                    blendMode = BlendMode.DstIn,
-                )
-            },
-    ) {
-        val topInset = maxHeight * 0.3f
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(top = topInset, bottom = maxHeight * 0.6f, start = 8.dp, end = 8.dp),
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            if (scrolling && !programmatic) following = false
+        }
+    }
+    LaunchedEffect(data) { following = true }
+    LaunchedEffect(active, following, data.lines.size) {
+        if (following && data.lines.isNotEmpty()) {
+            programmatic = true
+            try {
+                listState.animateScrollToItem(active)
+            } finally {
+                programmatic = false
+            }
+        }
+    }
+    Box(modifier = modifier) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.2f to Color.Black,
+                            0.7f to Color.Black,
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
         ) {
-            itemsIndexed(data.lines) { index, line ->
-                val distance = abs(index - active)
-                val target = when (distance) {
-                    0 -> 1f
-                    1 -> 0.4f
-                    2 -> 0.22f
-                    else -> 0.12f
+            val topInset = maxHeight * 0.3f
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(top = topInset, bottom = maxHeight * 0.6f, start = 8.dp, end = 8.dp),
+            ) {
+                itemsIndexed(data.lines) { index, line ->
+                    val distance = abs(index - active)
+                    val target = when (distance) {
+                        0 -> 1f
+                        1 -> 0.4f
+                        2 -> 0.22f
+                        else -> 0.12f
+                    }
+                    val alpha by animateFloatAsState(target, label = "read-along-alpha")
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = MaterialTheme.typography.headlineSmall.lineHeight * 1.1f,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .graphicsLayer { this.alpha = alpha }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                following = true
+                                onSeekTo(data.startsMs[index])
+                            }
+                            .padding(vertical = 10.dp),
+                    )
                 }
-                val alpha by animateFloatAsState(target, label = "read-along-alpha")
-                Text(
-                    text = line,
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = MaterialTheme.typography.headlineSmall.lineHeight * 1.1f,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .graphicsLayer { this.alpha = alpha }
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onSeekTo(data.startsMs[index]) }
-                        .padding(vertical = 10.dp),
-                )
+            }
+        }
+        if (!following && !activeVisible && data.lines.isNotEmpty()) {
+            SmallFloatingActionButton(
+                onClick = { following = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp),
+            ) {
+                Icon(BookyIcons.sync, contentDescription = "Sync to audio")
             }
         }
     }

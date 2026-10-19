@@ -49,6 +49,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.tts.TimingFile
 import xyz.saltedchips.bookyplayer.tts.Cue
+import xyz.saltedchips.bookyplayer.tts.HIGHLIGHT_LAG_MS
+import xyz.saltedchips.bookyplayer.ui.components.RoundedHighlightText
 import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 import kotlinx.coroutines.withContext
@@ -111,11 +113,12 @@ fun EpubReaderScreen(
             }
         }
     }
-    val activeParagraph: Int? = if (sync != null && sync.loaded) {
-        TimingFile.cueAt(syncCues, sync.positionMs)?.paragraph
+    val activeCue: Cue? = if (sync != null && sync.loaded) {
+        TimingFile.cueAt(syncCues, sync.positionMs - HIGHLIGHT_LAG_MS)
     } else {
         null
     }
+    val activeParagraph: Int? = activeCue?.paragraph
     val colors = MaterialTheme.colorScheme
 
     Scaffold(
@@ -127,17 +130,17 @@ fun EpubReaderScreen(
             val offTarget = sync != null && sync.loaded && activeParagraph != null &&
                 (state.chapterIndex != sync.chapterIndex || !activeVisible)
             if (offTarget) {
-                androidx.compose.material3.ExtendedFloatingActionButton(
+                androidx.compose.material3.SmallFloatingActionButton(
                     onClick = {
                         if (sync != null && state.chapterIndex != sync.chapterIndex) {
                             viewModel.openChapter(sync.chapterIndex)
                         }
                         syncPending = true
                     },
-                    icon = { Icon(BookyIcons.sync, contentDescription = null) },
-                    text = { Text("Sync to audio") },
                     modifier = Modifier.padding(bottom = bottomPadding),
-                )
+                ) {
+                    Icon(BookyIcons.sync, contentDescription = "Sync to audio")
+                }
             }
         },
         topBar = {
@@ -270,13 +273,20 @@ fun EpubReaderScreen(
                                     modifier = Modifier.padding(bottom = 8.dp),
                                 )
                             }
-                            itemsIndexed(paragraphs) { _, paragraph ->
-                                Text(
-                                    paragraph,
+                            itemsIndexed(paragraphs) { paragraphIndex, paragraph ->
+                                val highlight = activeCue?.takeIf {
+                                    it.paragraph == paragraphIndex && sync?.chapterIndex == state.chapterIndex
+                                }
+                                RoundedHighlightText(
+                                    text = paragraph,
                                     style = MaterialTheme.typography.bodyLarge.copy(
                                         fontSize = (18f * state.textScale).sp,
                                         lineHeight = (30f * state.textScale).sp,
+                                        color = colors.onBackground,
                                     ),
+                                    highlightStart = highlight?.start ?: 0,
+                                    highlightEnd = highlight?.end ?: 0,
+                                    highlightColor = colors.primaryContainer,
                                 )
                             }
                             item("nav") {

@@ -11,6 +11,9 @@ import xyz.saltedchips.bookyplayer.epub.EpubChapter
  */
 data class Cue(val paragraph: Int, val start: Int, val end: Int, val startMs: Long, val endMs: Long)
 
+/** The read-along view switches to the next piece this long after it starts, so it never leads the voice. */
+const val HIGHLIGHT_LAG_MS = 350L
+
 /** The silences the speech engine adds, shared so timing estimates match the real audio. */
 object Pauses {
     const val TITLE_SECONDS = 0.9f
