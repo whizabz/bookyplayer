@@ -109,6 +109,8 @@ class AutoLibrary(context: Context) {
         prefs.edit().putFloat(KEY_SPEED, speed).apply()
     }
 
+    fun volumeBoostEnabled(): Boolean = prefs.getBoolean(KEY_VOLUME_BOOST, false)
+
     fun repeatEnabled(): Boolean = prefs.getBoolean(KEY_REPEAT, false)
 
     fun setRepeatEnabled(enabled: Boolean) {
@@ -349,6 +351,7 @@ class AutoLibrary(context: Context) {
         const val KEY_POSITION = "last_position_ms"
         const val KEY_SPEED = "last_speed"
         const val KEY_REPEAT = "last_repeat"
+        const val KEY_VOLUME_BOOST = "volume_boost"
         const val KEY_HIDDEN = "library_hidden_ids"
         const val KEY_LAST_PLAYED = "library_last_played"
         const val KEY_LISTENED = "library_listened"

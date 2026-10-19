@@ -66,6 +66,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val autoLibrary = AutoLibrary(application)
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<PlayerUiState> = _state
+    private val _volumeBoost = MutableStateFlow(prefs.getBoolean(KEY_VOLUME_BOOST, false))
+    val volumeBoost: StateFlow<Boolean> = _volumeBoost
 
     private var libraryBooks: List<Audiobook> = emptyList()
     private var controller: MediaController? = null
@@ -408,6 +410,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         writeCompleted(bookId, current)
         writeChapterProgress(bookId, progress)
         return applyChapterMarks(bookId, current, progress)
+    }
+
+    fun toggleVolumeBoost() {
+        val enabled = !_volumeBoost.value
+        prefs.edit().putBoolean(KEY_VOLUME_BOOST, enabled).apply()
+        _volumeBoost.value = enabled
     }
 
     fun toggleRepeat() {
@@ -990,6 +998,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         const val KEY_POSITION = "last_position_ms"
         const val KEY_SPEED = "last_speed"
         const val KEY_REPEAT = "last_repeat"
+        const val KEY_VOLUME_BOOST = "volume_boost"
         const val KEY_CHAPTER_PROGRESS = "chapter_progress_"
         const val KEY_CHAPTER_COMPLETE = "chapter_complete_"
         const val KEY_SMART_RESUME = "smart_resume"

@@ -3,6 +3,7 @@
 package xyz.saltedchips.bookyplayer.player
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Handler
@@ -15,7 +16,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -39,6 +43,7 @@ import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_REPEAT
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_BACK
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SKIP_FORWARD
 import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_SPEED
+import xyz.saltedchips.bookyplayer.player.AutoLibrary.Companion.KEY_VOLUME_BOOST
 import xyz.saltedchips.bookyplayer.ui.widget.captureNowPlaying
 import xyz.saltedchips.bookyplayer.ui.widget.refreshNowPlayingWidgets
 
@@ -51,6 +56,7 @@ class PlaybackService : MediaLibraryService() {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastWidgetUpdateAt = 0L
+    private val boostProcessor = VolumeBoostProcessor()
 
     private val persistWhilePlaying = object : Runnable {
         override fun run() {
@@ -65,6 +71,7 @@ class PlaybackService : MediaLibraryService() {
             KEY_SKIP_BACK -> skipPlayer.backIncrementMs = library.skipBackMs()
             KEY_SKIP_FORWARD -> skipPlayer.forwardIncrementMs = library.skipForwardMs()
             KEY_SPEED -> exoPlayer?.setPlaybackSpeed(library.speed())
+            KEY_VOLUME_BOOST -> boostProcessor.enabled = library.volumeBoostEnabled()
             KEY_REPEAT -> {
                 val repeating = library.repeatEnabled()
                 val mode = if (repeating) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
@@ -118,7 +125,19 @@ class PlaybackService : MediaLibraryService() {
         library = AutoLibrary(this)
         val prefs = getSharedPreferences(AutoLibrary.PREFS, MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(skipPrefsListener)
-        val exo = ExoPlayer.Builder(this)
+        boostProcessor.enabled = library.volumeBoostEnabled()
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioProcessors(arrayOf(boostProcessor))
+                .build()
+        }
+        val exo = ExoPlayer.Builder(this, renderersFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -241,6 +260,7 @@ class PlaybackService : MediaLibraryService() {
     private fun applyPlaybackPrefs() {
         val exo = exoPlayer ?: return
         exo.setPlaybackSpeed(library.speed())
+        boostProcessor.enabled = library.volumeBoostEnabled()
         exo.repeatMode = if (library.repeatEnabled()) {
             Player.REPEAT_MODE_ALL
         } else {

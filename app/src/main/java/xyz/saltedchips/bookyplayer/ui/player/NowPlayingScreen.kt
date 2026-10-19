@@ -194,6 +194,8 @@ fun NowPlayingScreen(
     onSnapshotMarks: () -> ChapterMarksSnapshot,
     onRestoreMarks: (ChapterMarksSnapshot) -> Unit,
     onToggleRepeat: () -> Unit,
+    volumeBoostEnabled: Boolean,
+    onToggleVolumeBoost: () -> Unit,
     onCloseBook: () -> Unit,
     hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
@@ -386,6 +388,8 @@ fun NowPlayingScreen(
                     onSnapshotMarks = onSnapshotMarks,
                     onRestoreMarks = {},
                     onToggleRepeat = {},
+                    volumeBoostEnabled = false,
+                    onToggleVolumeBoost = {},
                     onCloseBook = {},
                     onOpenChapters = {},
                     chaptersOpen = false,
@@ -520,6 +524,8 @@ fun NowPlayingScreen(
                 onSnapshotMarks = onSnapshotMarks,
                 onRestoreMarks = onRestoreMarks,
                 onToggleRepeat = onToggleRepeat,
+                volumeBoostEnabled = volumeBoostEnabled,
+                onToggleVolumeBoost = onToggleVolumeBoost,
                 onCloseBook = onCloseBook,
                 onOpenChapters = { settleTo(PlayerAnchor.Chapters) },
                 chaptersOpen = chapterProgress > 0.5f,
@@ -620,6 +626,8 @@ private fun NowPlayingContent(
     onSnapshotMarks: () -> ChapterMarksSnapshot,
     onRestoreMarks: (ChapterMarksSnapshot) -> Unit,
     onToggleRepeat: () -> Unit,
+    volumeBoostEnabled: Boolean,
+    onToggleVolumeBoost: () -> Unit,
     onCloseBook: () -> Unit,
     onOpenChapters: () -> Unit,
     chaptersOpen: Boolean,
@@ -1044,6 +1052,12 @@ private fun NowPlayingContent(
                             active = player.repeatEnabled,
                             onClick = onToggleRepeat,
                             icon = { Icon(BookyIcons.repeat, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Volume boost",
+                            active = volumeBoostEnabled,
+                            onClick = onToggleVolumeBoost,
+                            icon = { Icon(BookyIcons.volumeUp, contentDescription = null) },
                         )
                         toolbarItem(
                             menuLabel = "Mark chapter as played",

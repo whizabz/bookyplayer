@@ -3,6 +3,7 @@ package xyz.saltedchips.bookyplayer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -66,6 +67,7 @@ fun BookyApp(
     val notificationsPrompted by appearanceViewModel.notificationsPrompted.collectAsStateWithLifecycle()
     val library by libraryViewModel.state.collectAsStateWithLifecycle()
     val player by playerViewModel.state.collectAsStateWithLifecycle()
+    val volumeBoost by playerViewModel.volumeBoost.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var notificationsEnabled by remember {
@@ -375,6 +377,15 @@ fun BookyApp(
                         }
                     },
                     onToggleRepeat = playerViewModel::toggleRepeat,
+                    volumeBoostEnabled = volumeBoost,
+                    onToggleVolumeBoost = {
+                        playerViewModel.toggleVolumeBoost()
+                        Toast.makeText(
+                            context,
+                            if (volumeBoost) "Volume boost off" else "Volume boost on",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
                     onCloseBook = {
                         nowPlaying = false
                         playerViewModel.closeBook()
