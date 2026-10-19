@@ -25,7 +25,7 @@ data class ReaderUiState(
     val scrollIndex: Int = 0,
     val scrollOffset: Int = 0,
     val textScale: Float = 1f,
-    /** True each time an ePub is opened, until it is dismissed: shows the audiobook tip. */
+    /** True for an ePub until its audiobook tip has been dismissed. */
     val audioTip: Boolean = true,
 )
 
@@ -40,8 +40,8 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     val state: StateFlow<ReaderUiState> = _state
 
     fun load(id: String) {
-        // The tip comes back every time a book is opened.
-        _state.update { it.copy(audioTip = true) }
+        // The tip shows for each ePub until the person dismisses it for that book.
+        _state.update { it.copy(audioTip = id !in dismissedTips()) }
         if (bookId == id && !_state.value.loading && _state.value.error == null) return
         bookId = id
         _state.update { it.copy(loading = true, error = null) }
@@ -99,8 +99,13 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun dismissAudioTip() {
+        val id = bookId ?: return
+        prefs.edit().putStringSet(KEY_TIPS_DISMISSED, dismissedTips() + id).apply()
         _state.update { it.copy(audioTip = false) }
     }
+
+    private fun dismissedTips(): Set<String> =
+        prefs.getStringSet(KEY_TIPS_DISMISSED, emptySet()).orEmpty().toSet()
 
     fun adjustTextScale(delta: Float) {
         val next = (_state.value.textScale + delta).coerceIn(MIN_SCALE, MAX_SCALE)
@@ -125,6 +130,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     private companion object {
         const val KEY_TEXT_SCALE = "reader_text_scale"
+        const val KEY_TIPS_DISMISSED = "epub_audio_tip_dismissed"
         const val MIN_SCALE = 0.8f
         const val MAX_SCALE = 1.8f
     }
