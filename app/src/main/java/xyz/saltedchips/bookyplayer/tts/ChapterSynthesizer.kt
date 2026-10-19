@@ -105,9 +105,9 @@ class ChapterSynthesizer(private val engine: KokoroEngine) {
         private fun buildItems(chapter: EpubChapter, locale: Locale, speakTitle: Boolean): List<Item> {
             val items = mutableListOf<Item>()
             if (speakTitle && chapter.title.isNotBlank()) {
-                items += Item(chapter.title.trim().trimEnd('.') + ".", TITLE_PAUSE_SECONDS)
+                items += Item(TextNormalizer.normalize(chapter.title.trim().trimEnd('.')) + ".", TITLE_PAUSE_SECONDS)
             }
-            TextChunker.chunk(chapter.text, locale, MAX_CHUNK_CHARS).forEach { chunk ->
+            TextChunker.chunk(TextNormalizer.normalize(chapter.text), locale, MAX_CHUNK_CHARS).forEach { chunk ->
                 items += Item(
                     chunk.text,
                     if (chunk.endsParagraph) PARAGRAPH_PAUSE_SECONDS else SENTENCE_PAUSE_SECONDS,
