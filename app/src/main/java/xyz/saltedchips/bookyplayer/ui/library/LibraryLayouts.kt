@@ -104,7 +104,7 @@ internal fun LibraryHeroCard(
                         .fillMaxWidth()
                         .padding(top = 8.dp),
                     color = scheme.primary,
-                    trackColor = scheme.surfaceContainerHighest,
+                    trackColor = scheme.onSecondaryContainer.copy(alpha = 0.2f),
                     amplitude = { if (playing) 1f else 0f },
                     waveSpeed = WavyProgressIndicatorDefaults.LinearDeterminateWavelength / 3f,
                 )
@@ -401,6 +401,8 @@ internal fun ConversionCard(
             if (!failed) {
                 LinearWavyProgressIndicator(
                     progress = { done.toFloat() / total },
+                    color = scheme.primary,
+                    trackColor = scheme.onSecondaryContainer.copy(alpha = 0.2f),
                     amplitude = { if (converting) 1f else 0f },
                     modifier = Modifier
                         .fillMaxWidth()
