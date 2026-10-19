@@ -341,6 +341,7 @@ fun BookyApp(
                                     }
                                 },
                                 bottomPadding = miniPlayerClearance,
+                                hazeState = hazeState,
                                 sync = book.linkedAudioId
                                     ?.let { id -> library.playQueue.find { it.id == id } }
                                     ?.let { audioBook ->

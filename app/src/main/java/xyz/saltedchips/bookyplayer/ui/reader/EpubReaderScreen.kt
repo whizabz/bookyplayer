@@ -56,6 +56,8 @@ import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.produceState
 import xyz.saltedchips.bookyplayer.reader.EpubReaderViewModel
@@ -82,6 +84,7 @@ fun EpubReaderScreen(
     onRegenerate: ((chapter: Int?) -> Unit)? = null,
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
     sync: ReaderSync? = null,
+    hazeState: dev.chrisbanes.haze.HazeState? = null,
 ) {
     val viewModel: EpubReaderViewModel = viewModel(key = "reader-${book.id}")
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -90,7 +93,12 @@ fun EpubReaderScreen(
     var showTextMenu by remember { mutableStateOf(false) }
     var showAudioMenu by remember { mutableStateOf(false) }
     var syncPending by remember { mutableStateOf(false) }
-    var activeVisible by remember { mutableStateOf(false) }
+    // Top and bottom (on screen) of the highlighted sentence, and the area the text scrolls in.
+    var highlightBounds by remember { mutableStateOf<Triple<Int, Float, Float>?>(null) }
+    var viewportBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val activeVisible = highlightBounds?.let { (_, top, bottom) ->
+        viewportBounds?.let { view -> bottom > view.top && top < view.bottom }
+    } ?: false
     val context = LocalContext.current
     // Cues for the chapter the audio is in, to find the paragraph being spoken.
     val syncCues by produceState<List<Cue>>(
@@ -133,13 +141,14 @@ fun EpubReaderScreen(
                 (state.chapterIndex != sync.chapterIndex || !activeVisible)
             if (offTarget) {
                 SyncPill(
+                    hazeState = hazeState,
                     onClick = {
                         if (sync != null && state.chapterIndex != sync.chapterIndex) {
                             viewModel.openChapter(sync.chapterIndex)
                         }
                         syncPending = true
                     },
-                    modifier = Modifier.padding(bottom = bottomPadding),
+                    modifier = Modifier.padding(bottom = (bottomPadding - 12.dp).coerceAtLeast(0.dp)),
                 )
             }
         },
@@ -237,13 +246,6 @@ fun EpubReaderScreen(
                                 Triple(chapterIndex, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
                             }.collect { (c, i, o) -> if (!listState.isScrollInProgress) viewModel.savePosition(c, i, o) }
                         }
-                        LaunchedEffect(listState, activeParagraph, sync?.chapterIndex) {
-                            snapshotFlow {
-                                val target = activeParagraph?.plus(1)
-                                sync?.chapterIndex == chapterIndex && target != null &&
-                                    listState.layoutInfo.visibleItemsInfo.any { it.index == target }
-                            }.collect { activeVisible = it }
-                        }
                         LaunchedEffect(syncPending, activeParagraph, state.chapterIndex) {
                             val paragraph = activeParagraph
                             if (syncPending && sync?.chapterIndex == state.chapterIndex && paragraph != null) {
@@ -262,7 +264,9 @@ fun EpubReaderScreen(
                         }
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .onGloballyPositioned { viewportBounds = it.boundsInRoot() },
                             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 16.dp + bottomPadding),
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
@@ -287,6 +291,17 @@ fun EpubReaderScreen(
                                     highlightStart = highlight?.start ?: 0,
                                     highlightEnd = highlight?.end ?: 0,
                                     highlightColor = colors.primaryContainer,
+                                    onHighlightBounds = if (highlight != null) {
+                                        { bounds ->
+                                            if (bounds != null) {
+                                                highlightBounds = Triple(paragraphIndex, bounds.first, bounds.second)
+                                            } else if (highlightBounds?.first == paragraphIndex) {
+                                                highlightBounds = null
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    },
                                 )
                             }
                             item("nav") {
