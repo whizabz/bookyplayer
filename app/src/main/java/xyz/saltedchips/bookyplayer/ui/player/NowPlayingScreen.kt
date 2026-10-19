@@ -3,7 +3,6 @@ package xyz.saltedchips.bookyplayer.ui.player
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import kotlinx.coroutines.delay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -660,7 +659,6 @@ private fun NowPlayingContent(
         animationSpec = androidx.compose.animation.core.tween(220),
         label = "read-along-fade",
     )
-    val swipePx = with(density) { 72.dp.toPx() }
     val readAlongData = rememberReadAlongData(
         context = androidx.compose.ui.platform.LocalContext.current,
         book = book,
@@ -1224,17 +1222,7 @@ private fun NowPlayingContent(
                         width = with(density) { coverExpandedSize.toDp() },
                         height = with(density) { regionHeightPx.toDp() },
                     )
-                    .graphicsLayer { alpha = readAlongAlpha }
-                    .pointerInput(Unit) {
-                        // Swiping left on the text goes back to the cover.
-                        var total = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { total = 0f },
-                            onDragCancel = { total = 0f },
-                            onDragEnd = { if (total < -swipePx) readAlong = false },
-                            onHorizontalDrag = { _, amount -> total += amount },
-                        )
-                    },
+                    .graphicsLayer { alpha = readAlongAlpha },
             )
         }
         MorphingNowPlayingTitle(
