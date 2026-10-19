@@ -57,8 +57,6 @@ import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.layout.boundsInRoot
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.produceState
@@ -86,11 +84,8 @@ fun EpubReaderScreen(
     onRegenerate: ((chapter: Int?) -> Unit)? = null,
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
     sync: ReaderSync? = null,
-    hazeState: dev.chrisbanes.haze.HazeState? = null, // unused: the pill blurs the reader's own text
+    hazeState: dev.chrisbanes.haze.HazeState? = null,
 ) {
-    // The pill sits above the reading area (not inside it), so it can blur the text beneath like
-    // the mini player blurs the library.
-    val readerHaze = rememberHazeState()
     val viewModel: EpubReaderViewModel = viewModel(key = "reader-${book.id}")
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(book.id) { viewModel.load(book.id) }
@@ -146,7 +141,7 @@ fun EpubReaderScreen(
                 (state.chapterIndex != sync.chapterIndex || !activeVisible)
             if (offTarget) {
                 SyncPill(
-                    hazeState = readerHaze,
+                    hazeState = hazeState,
                     onClick = {
                         if (sync != null && state.chapterIndex != sync.chapterIndex) {
                             viewModel.openChapter(sync.chapterIndex)
@@ -221,13 +216,7 @@ fun EpubReaderScreen(
             )
         },
     ) { padding ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .hazeSource(readerHaze),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             when {
                 state.loading -> CircularProgressIndicator()
                 state.error != null -> Column(
