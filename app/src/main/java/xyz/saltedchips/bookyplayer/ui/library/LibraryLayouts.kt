@@ -369,13 +369,13 @@ internal fun ConversionCard(
     onStop: () -> Unit,
     onRemove: () -> Unit,
     onPlay: (() -> Unit)? = null,
-    liveProgress: Float? = null,
+    liveProgress: xyz.saltedchips.bookyplayer.tts.LiveProgress? = null,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val total = book.chapters.size.coerceAtLeast(1)
     val done = book.doneChapters
-    val fraction = (liveProgress ?: (done.toFloat() / total)).coerceIn(0f, 1f)
+    val fraction = (liveProgress?.fraction ?: (done.toFloat() / total)).coerceIn(0f, 1f)
     val percent = (fraction * 100).toInt()
     val converting = book.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Converting
     val failed = book.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Failed
@@ -401,6 +401,12 @@ internal fun ConversionCard(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 2.dp),
             )
+            if (converting && liveProgress?.etaMs != null) {
+                Text(
+                    xyz.saltedchips.bookyplayer.tts.formatEta(liveProgress.etaMs),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             if (!failed) {
                 LinearWavyProgressIndicator(
                     progress = { fraction },
@@ -456,7 +462,7 @@ internal fun EpubBadge(modifier: Modifier = Modifier) {
 @Composable
 internal fun ConversionIndicator(
     conversions: List<xyz.saltedchips.bookyplayer.library.GeneratedBook>,
-    liveProgress: Map<String, Float> = emptyMap(),
+    liveProgress: Map<String, xyz.saltedchips.bookyplayer.tts.LiveProgress> = emptyMap(),
 ) {
     val converting = conversions.any {
         it.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Converting
@@ -472,7 +478,7 @@ internal fun ConversionIndicator(
         failed -> Icon(BookyIcons.warning, contentDescription = "Audiobook conversion needs attention")
         else -> {
             val average = conversions.map { book ->
-                liveProgress[book.uuid] ?: (book.doneChapters.toFloat() / book.chapters.size.coerceAtLeast(1))
+                liveProgress[book.uuid]?.fraction ?: (book.doneChapters.toFloat() / book.chapters.size.coerceAtLeast(1))
             }.average().toFloat()
             androidx.compose.material3.CircularProgressIndicator(
                 progress = { average },
@@ -491,7 +497,7 @@ internal fun ConversionsSheet(
     onStop: (String) -> Unit,
     onRemove: (String) -> Unit,
     onPlay: (String) -> Unit,
-    liveProgress: Map<String, Float>,
+    liveProgress: Map<String, xyz.saltedchips.bookyplayer.tts.LiveProgress>,
     onDismiss: () -> Unit,
 ) {
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {

@@ -119,7 +119,7 @@ fun LibraryScreen(
     onStopConversion: (String) -> Unit = {},
     onRemoveConversion: (String) -> Unit = {},
     onPlayConversion: (String) -> Unit = {},
-    conversionProgress: Map<String, Float> = emptyMap(),
+    conversionProgress: Map<String, xyz.saltedchips.bookyplayer.tts.LiveProgress> = emptyMap(),
     openConversionsSignal: Long = 0L,
 ) {
     var sortMenu by remember { mutableStateOf(false) }

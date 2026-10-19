@@ -32,6 +32,9 @@ class ConvertEpubWorker(
 ) : CoroutineWorker(context, params) {
     private val repo = GeneratedBookStore.of(context)
     private var lastNotifyAt = 0L
+    private var weights: List<Double> = emptyList()
+    private var startedAt = 0L
+    private var startFraction = 0f
 
     override suspend fun doWork(): Result {
         val uuid = inputData.getString(KEY_UUID) ?: return Result.failure()
@@ -43,7 +46,11 @@ class ConvertEpubWorker(
         book = book.copy(status = ConversionStatus.Converting, error = null)
         repo.save(book)
         GeneratedBookStore.notifyChanged()
-        setForeground(foregroundInfo(book, 0f))
+        weights = book.chapters.indices.map { repo.chapterTextFile(uuid, it).length().toDouble().coerceAtLeast(1.0) }
+        startedAt = System.currentTimeMillis()
+        startFraction = overallFraction(book, null, 0f)
+        ConversionProgress.set(uuid, LiveProgress(startFraction))
+        setForeground(foregroundInfo(book, LiveProgress(startFraction)))
 
         val engine = try {
             KokoroEngine(manager.modelDir)
@@ -108,28 +115,38 @@ class ConvertEpubWorker(
         return Result.failure()
     }
 
+    /** Share of all text spoken so far, weighting each chapter by its length. */
+    private fun overallFraction(book: GeneratedBook, currentIndex: Int?, currentFraction: Float): Float {
+        val total = weights.sum().coerceAtLeast(1.0)
+        var done = 0.0
+        book.chapters.forEachIndexed { i, chapter ->
+            if (chapter.done) done += weights.getOrElse(i) { 0.0 }
+        }
+        if (currentIndex != null) done += weights.getOrElse(currentIndex) { 0.0 } * currentFraction
+        return (done / total).toFloat().coerceIn(0f, 1f)
+    }
+
     private fun maybeNotify(book: GeneratedBook, chapterIndex: Int, fraction: Float) {
-        val overallNow = (chapterIndex + fraction) / book.chapters.size.coerceAtLeast(1)
-        ConversionProgress.set(book.uuid, overallNow)
+        val overall = overallFraction(book, chapterIndex, fraction)
         val now = System.currentTimeMillis()
+        val live = LiveProgress(overall, estimateEtaMs(now - startedAt, startFraction, overall))
+        ConversionProgress.set(book.uuid, live)
         if (now - lastNotifyAt < 1_000L) return
         lastNotifyAt = now
-        val done = chapterIndex + fraction
-        val overall = done / book.chapters.size.coerceAtLeast(1)
-        ConversionProgress.set(book.uuid, overall)
-        val info = foregroundInfo(book, overall)
+        val info = foregroundInfo(book, live)
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         runCatching { manager.notify(info.notificationId, info.notification) }
     }
 
-    private fun foregroundInfo(book: GeneratedBook, fraction: Float): ForegroundInfo {
+    private fun foregroundInfo(book: GeneratedBook, live: LiveProgress): ForegroundInfo {
         ensureChannel(applicationContext)
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
-        val percent = (fraction * 100).toInt().coerceIn(0, 100)
+        val percent = (live.fraction * 100).toInt().coerceIn(0, 100)
+        val detail = live.etaMs?.let { " · ${formatEta(it).replaceFirstChar { c -> c.lowercase() }}" }.orEmpty()
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ms_book_2)
             .setContentTitle("Generating audiobook")
-            .setContentText("${book.title} · $percent%")
+            .setContentText("${book.title} · $percent%$detail")
             .setProgress(100, percent, false)
             .setContentIntent(ConversionsRequests.pendingIntent(applicationContext, 1, openSheet = true))
             .setOngoing(true)
