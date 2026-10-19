@@ -291,7 +291,7 @@ fun BookyApp(
                         onOpenSettings = { showingSettings = true },
                         conversions = library.conversions,
                         onResumeConversion = libraryViewModel::resumeConversion,
-                        onStopConversion = libraryViewModel::stopConversion,
+                        onPauseConversion = libraryViewModel::pauseConversion,
                         onRemoveConversion = libraryViewModel::removeConversion,
                         conversionProgress = conversionProgress,
                         openConversionsSignal = openConversionsSignal,

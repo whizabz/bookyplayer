@@ -35,8 +35,18 @@ class KokoroEngine(private val modelDir: File, numThreads: Int = 3) : Closeable 
     val sampleRate: Int get() = tts.sampleRate()
 
     /** Speaks [text] and returns mono float samples at [sampleRate]. [speed] 1.0 is normal. */
-    fun generate(text: String, sid: Int, speed: Float = 1f): FloatArray =
-        tts.generate(text = text, sid = sid, speed = speed).samples
+    fun generate(
+        text: String,
+        sid: Int,
+        speed: Float = 1f,
+        isCancelled: () -> Boolean = { false },
+    ): FloatArray {
+        if (isCancelled()) return FloatArray(0)
+        // The callback runs after each sentence; returning 0 stops generation early.
+        return tts.generateWithCallback(text = text, sid = sid, speed = speed) { _ ->
+            if (isCancelled()) 0 else 1
+        }.samples
+    }
 
     override fun close() {
         tts.release()

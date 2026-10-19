@@ -79,13 +79,14 @@ class ConvertEpubWorker(
                     )
                 }
                 check(partFile.renameTo(finalFile)) { "Couldn't save chapter ${index + 1}" }
-                book = book.withChapterDone(index, duration)
+                // Keep whatever status the user set (for example Paused) while saving the chapter.
+                book = (repo.load(uuid) ?: book).withChapterDone(index, duration)
                 repo.save(book)
                 GeneratedBookStore.notifyChanged()
                 if (book.doneChapters == 1 && book.chapters.size > 1) notifyFirstChapter(book)
             }
             ConversionProgress.clear(book.uuid)
-            repo.save(book.copy(status = ConversionStatus.Ready, error = null))
+            repo.save((repo.load(uuid) ?: book).copy(status = ConversionStatus.Ready, error = null))
             GeneratedBookStore.notifyChanged()
             notifyDone(book)
             return Result.success()
@@ -152,7 +153,7 @@ class ConvertEpubWorker(
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(0, "Stop", cancel)
+            .addAction(0, "Pause", cancel)
             .build()
         return if (Build.VERSION.SDK_INT >= 29) {
             ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)

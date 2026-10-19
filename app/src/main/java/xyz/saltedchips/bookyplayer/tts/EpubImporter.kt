@@ -60,6 +60,21 @@ object EpubImporter {
         GeneratedBookStore.notifyChanged()
     }
 
+    /** Pauses right away in the UI, then lets the running job wind down at the next sentence. */
+    fun pause(context: Context, bookId: String) {
+        val app = context.applicationContext
+        val repo = GeneratedBookStore.of(app)
+        val uuid = GeneratedBookRepository.uuidOf(bookId)
+        repo.load(uuid)?.let { book ->
+            if (book.status == ConversionStatus.Converting) {
+                repo.save(book.copy(status = ConversionStatus.Paused))
+            }
+        }
+        ConversionProgress.clear(uuid)
+        GeneratedBookStore.notifyChanged()
+        cancel(app, bookId)
+    }
+
     fun cancel(context: Context, bookId: String) {
         WorkManager.getInstance(context.applicationContext)
             .cancelUniqueWork(workName(GeneratedBookRepository.uuidOf(bookId)))

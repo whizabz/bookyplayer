@@ -116,7 +116,7 @@ fun LibraryScreen(
     layout: LibraryLayout = LibraryLayout.Rows,
     conversions: List<GeneratedBook> = emptyList(),
     onResumeConversion: (String) -> Unit = {},
-    onStopConversion: (String) -> Unit = {},
+    onPauseConversion: (String) -> Unit = {},
     onRemoveConversion: (String) -> Unit = {},
     onPlayConversion: (String) -> Unit = {},
     conversionProgress: Map<String, xyz.saltedchips.bookyplayer.tts.LiveProgress> = emptyMap(),
@@ -525,7 +525,7 @@ fun LibraryScreen(
         ConversionsSheet(
             conversions = conversions,
             onResume = onResumeConversion,
-            onStop = onStopConversion,
+            onPause = onPauseConversion,
             onRemove = onRemoveConversion,
             onPlay = { id ->
                 showConversions = false

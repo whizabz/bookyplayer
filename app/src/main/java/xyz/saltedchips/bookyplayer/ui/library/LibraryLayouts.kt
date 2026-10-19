@@ -366,7 +366,7 @@ internal fun LibraryGridItem(
 internal fun ConversionCard(
     book: xyz.saltedchips.bookyplayer.library.GeneratedBook,
     onResume: () -> Unit,
-    onStop: () -> Unit,
+    onPause: () -> Unit,
     onRemove: () -> Unit,
     onPlay: (() -> Unit)? = null,
     liveProgress: xyz.saltedchips.bookyplayer.tts.LiveProgress? = null,
@@ -396,7 +396,7 @@ internal fun ConversionCard(
                 when {
                     failed -> book.error ?: "Conversion failed"
                     converting -> "Generating audiobook · $percent% · $done of $total chapters"
-                    else -> "Stopped · $percent% · $done of $total chapters"
+                    else -> "Paused · $percent% · $done of $total chapters"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 2.dp),
@@ -425,7 +425,7 @@ internal fun ConversionCard(
                 horizontalArrangement = Arrangement.End,
             ) {
                 if (converting) {
-                    androidx.compose.material3.TextButton(onClick = onStop) { Text("Stop") }
+                    androidx.compose.material3.TextButton(onClick = onPause) { Text("Pause") }
                 } else {
                     androidx.compose.material3.TextButton(onClick = onRemove) { Text("Remove") }
                     androidx.compose.material3.TextButton(onClick = onResume) {
@@ -494,7 +494,7 @@ internal fun ConversionIndicator(
 internal fun ConversionsSheet(
     conversions: List<xyz.saltedchips.bookyplayer.library.GeneratedBook>,
     onResume: (String) -> Unit,
-    onStop: (String) -> Unit,
+    onPause: (String) -> Unit,
     onRemove: (String) -> Unit,
     onPlay: (String) -> Unit,
     liveProgress: Map<String, xyz.saltedchips.bookyplayer.tts.LiveProgress>,
@@ -512,7 +512,7 @@ internal fun ConversionsSheet(
                 ConversionCard(
                     book = conversion,
                     onResume = { onResume(conversion.id) },
-                    onStop = { onStop(conversion.id) },
+                    onPause = { onPause(conversion.id) },
                     onRemove = { onRemove(conversion.id) },
                     onPlay = { onPlay(conversion.id) },
                     liveProgress = liveProgress[conversion.uuid],

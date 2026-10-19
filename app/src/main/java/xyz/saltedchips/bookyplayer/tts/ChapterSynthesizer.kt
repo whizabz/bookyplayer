@@ -24,13 +24,17 @@ class ChapterSynthesizer(private val engine: KokoroEngine) {
         val writer = AacWriter(output, engine.sampleRate)
         try {
             if (speakTitle && chapter.title.isNotBlank()) {
-                writer.write(engine.generate(chapter.title.trim().trimEnd('.') + ".", voiceSid, speed))
+                val title = engine.generate(chapter.title.trim().trimEnd('.') + ".", voiceSid, speed, isCancelled)
+                if (isCancelled()) throw SynthesisCancelled()
+                writer.write(title)
                 writer.writeSilence(TITLE_PAUSE_SECONDS)
             }
             var doneChars = 0
             for (chunk in chunks) {
                 if (isCancelled()) throw SynthesisCancelled()
-                writer.write(engine.generate(chunk.text, voiceSid, speed))
+                val audio = engine.generate(chunk.text, voiceSid, speed, isCancelled)
+                if (isCancelled()) throw SynthesisCancelled()
+                writer.write(audio)
                 writer.writeSilence(if (chunk.endsParagraph) PARAGRAPH_PAUSE_SECONDS else SENTENCE_PAUSE_SECONDS)
                 doneChars += chunk.text.length
                 onProgress(doneChars.toFloat() / totalChars)

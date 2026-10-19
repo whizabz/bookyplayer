@@ -312,7 +312,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun resumeConversion(bookId: String) = EpubImporter.resume(getApplication(), bookId)
 
-    fun stopConversion(bookId: String) = EpubImporter.cancel(getApplication(), bookId)
+    fun pauseConversion(bookId: String) = EpubImporter.pause(getApplication(), bookId)
 
     fun removeConversion(bookId: String) {
         EpubImporter.delete(getApplication(), bookId)
