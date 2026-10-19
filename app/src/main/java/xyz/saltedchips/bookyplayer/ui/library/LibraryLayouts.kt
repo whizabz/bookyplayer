@@ -440,3 +440,59 @@ internal fun EpubBadge(modifier: Modifier = Modifier) {
         )
     }
 }
+
+/** The top-bar badge: a spinner while audiobooks are being made, otherwise their overall progress. */
+@Composable
+internal fun ConversionIndicator(conversions: List<xyz.saltedchips.bookyplayer.library.GeneratedBook>) {
+    val converting = conversions.any {
+        it.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Converting
+    }
+    val failed = conversions.any {
+        it.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Failed
+    }
+    when {
+        converting -> androidx.compose.material3.CircularProgressIndicator(
+            modifier = Modifier.size(24.dp),
+            strokeWidth = 3.dp,
+        )
+        failed -> Icon(BookyIcons.warning, contentDescription = "Audiobook conversion needs attention")
+        else -> {
+            val total = conversions.sumOf { it.chapters.size }.coerceAtLeast(1)
+            val done = conversions.sumOf { it.doneChapters }
+            androidx.compose.material3.CircularProgressIndicator(
+                progress = { done.toFloat() / total },
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 3.dp,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ConversionsSheet(
+    conversions: List<xyz.saltedchips.bookyplayer.library.GeneratedBook>,
+    onResume: (String) -> Unit,
+    onStop: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Making audiobooks", style = MaterialTheme.typography.headlineSmall)
+            conversions.forEach { conversion ->
+                ConversionCard(
+                    book = conversion,
+                    onResume = { onResume(conversion.id) },
+                    onStop = { onStop(conversion.id) },
+                    onRemove = { onRemove(conversion.id) },
+                )
+            }
+        }
+    }
+}

@@ -120,6 +120,7 @@ fun LibraryScreen(
     onRemoveConversion: (String) -> Unit = {},
 ) {
     var sortMenu by remember { mutableStateOf(false) }
+    var showConversions by rememberSaveable { mutableStateOf(false) }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
     var revealedId by remember { mutableStateOf<String?>(null) }
@@ -243,6 +244,11 @@ fun LibraryScreen(
                         exit = exitToEnd,
                     ) {
                         Row {
+                            if (conversions.isNotEmpty()) {
+                                IconButton(onClick = { showConversions = true }) {
+                                    ConversionIndicator(conversions)
+                                }
+                            }
                             Box {
                                 IconButton(onClick = { sortMenu = true }) {
                                     Icon(BookyIcons.sort, contentDescription = "Sort")
@@ -378,14 +384,6 @@ fun LibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (showEmptyState) item("empty-state") { emptyState() }
-                    items(conversions, key = { "conv-" + it.uuid }) { conversion ->
-                        ConversionCard(
-                            book = conversion,
-                            onResume = { onResumeConversion(conversion.id) },
-                            onStop = { onStopConversion(conversion.id) },
-                            onRemove = { onRemoveConversion(conversion.id) },
-                        )
-                    }
                     itemsIndexed(shown, key = { _, book -> book.id }) { index, book ->
                         LibraryBookRow(
                             book = book,
@@ -427,14 +425,6 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (showEmptyState) item("empty-state") { emptyState() }
-                        items(conversions, key = { "conv-" + it.uuid }) { conversion ->
-                            ConversionCard(
-                                book = conversion,
-                                onResume = { onResumeConversion(conversion.id) },
-                                onStop = { onStopConversion(conversion.id) },
-                                onRemove = { onRemoveConversion(conversion.id) },
-                            )
-                        }
                         if (heroBook != null && !selecting) {
                             item("hero") {
                                 LibraryHeroCard(
@@ -497,18 +487,6 @@ fun LibraryScreen(
                     if (showEmptyState) {
                         item("empty-state", span = { GridItemSpan(maxLineSpan) }) { emptyState() }
                     }
-                    items(
-                        conversions,
-                        key = { "conv-" + it.uuid },
-                        span = { GridItemSpan(maxLineSpan) },
-                    ) { conversion ->
-                        ConversionCard(
-                            book = conversion,
-                            onResume = { onResumeConversion(conversion.id) },
-                            onStop = { onStopConversion(conversion.id) },
-                            onRemove = { onRemoveConversion(conversion.id) },
-                        )
-                    }
                     items(shown, key = { it.id }) { book ->
                         LibraryGridItem(
                             book = book,
@@ -535,6 +513,18 @@ fun LibraryScreen(
         }
         }
         }
+    }
+
+    if (showConversions && conversions.isNotEmpty()) {
+        ConversionsSheet(
+            conversions = conversions,
+            onResume = onResumeConversion,
+            onStop = onStopConversion,
+            onRemove = onRemoveConversion,
+            onDismiss = { showConversions = false },
+        )
+    } else if (showConversions) {
+        showConversions = false
     }
 
     editingBook?.let { book ->
