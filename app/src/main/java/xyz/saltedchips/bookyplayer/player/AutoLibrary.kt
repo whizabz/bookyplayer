@@ -9,6 +9,7 @@ import androidx.media3.session.MediaSession
 import org.json.JSONObject
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.library.CoverLoader
+import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.library.LibraryCatalogStore
 import xyz.saltedchips.bookyplayer.library.LibrarySort
 
@@ -136,12 +137,13 @@ class AutoLibrary(context: Context) {
     }
 
     private fun decoratedBooks(): List<Audiobook> {
-        val catalog = LibraryCatalogStore.load(appContext) ?: return emptyList()
+        val catalogBooks = LibraryCatalogStore.load(appContext)?.books.orEmpty()
+        val allBooks = catalogBooks + GeneratedBookStore.of(appContext).audiobooks()
         val hidden = prefs.getStringSet(KEY_HIDDEN, emptySet()).orEmpty()
         val listened = loadLongMap(KEY_LISTENED)
         val lastPlayed = loadLongMap(KEY_LAST_PLAYED)
         val metadata = loadMetadata()
-        return catalog.books
+        return allBooks
             .filterNot { it.id in hidden }
             .map { book -> decorate(book, metadata[book.id], listened, lastPlayed) }
     }

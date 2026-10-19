@@ -1,0 +1,78 @@
+package xyz.saltedchips.bookyplayer.tts
+
+import android.content.Context
+import android.net.Uri
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import xyz.saltedchips.bookyplayer.epub.EpubParser
+import xyz.saltedchips.bookyplayer.library.ConversionStatus
+import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
+import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
+
+/** Stages a picked ePub as a generated book and starts (or resumes) its conversion job. */
+object EpubImporter {
+    /**
+     * Parses the ePub at [uri], stores its chapters, and starts converting. Returns the new book id.
+     * Throws [xyz.saltedchips.bookyplayer.epub.EpubDrmException] or
+     * [xyz.saltedchips.bookyplayer.epub.EpubParseException] when the file can't be used.
+     */
+    suspend fun import(
+        context: Context,
+        uri: Uri,
+        voiceSid: Int = KokoroVoices.default.sid,
+        speed: Float = 1f,
+    ): String = withContext(Dispatchers.IO) {
+        val app = context.applicationContext
+        val temp = File.createTempFile("import", ".epub", app.cacheDir)
+        try {
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                temp.outputStream().use { input.copyTo(it) }
+            } ?: error("Couldn't open that file")
+            val epub = EpubParser.parse(temp)
+            val book = GeneratedBookStore.of(app).create(epub, voiceSid, speed)
+            enqueue(app, book.uuid)
+            GeneratedBookStore.notifyChanged()
+            book.id
+        } finally {
+            temp.delete()
+        }
+    }
+
+    /** Resumes a stopped or failed conversion where it left off. */
+    fun resume(context: Context, bookId: String) {
+        val app = context.applicationContext
+        val repo = GeneratedBookStore.of(app)
+        val uuid = GeneratedBookRepository.uuidOf(bookId)
+        val book = repo.load(uuid) ?: return
+        repo.save(book.copy(status = ConversionStatus.Converting, error = null))
+        enqueue(app, uuid)
+        GeneratedBookStore.notifyChanged()
+    }
+
+    fun cancel(context: Context, bookId: String) {
+        WorkManager.getInstance(context.applicationContext)
+            .cancelUniqueWork(workName(GeneratedBookRepository.uuidOf(bookId)))
+    }
+
+    /** Stops any running job and removes the book's files. */
+    fun delete(context: Context, bookId: String) {
+        cancel(context, bookId)
+        GeneratedBookStore.of(context).delete(GeneratedBookRepository.uuidOf(bookId))
+        GeneratedBookStore.notifyChanged()
+    }
+
+    private fun enqueue(context: Context, uuid: String) {
+        val request = OneTimeWorkRequestBuilder<ConvertEpubWorker>()
+            .setInputData(Data.Builder().putString(ConvertEpubWorker.KEY_UUID, uuid).build())
+            .build()
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(workName(uuid), ExistingWorkPolicy.REPLACE, request)
+    }
+
+    private fun workName(uuid: String) = "convert-$uuid"
+}

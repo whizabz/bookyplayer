@@ -12,6 +12,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.tts.EpubImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +45,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val prefs = application.getSharedPreferences("booky_prefs", 0)
     private val scanner = LibraryScanner(application)
     private var scanned = emptyList<Audiobook>()
+    private val generatedRepo = GeneratedBookStore.of(application)
+    private var generated = emptyList<Audiobook>()
     private var fileFingerprints = emptyMap<String, String>()
     private var treeFingerprint: String? = null
     private val hiddenIds = prefs.getStringSet(KEY_HIDDEN, emptySet())!!.toMutableSet()
@@ -64,6 +67,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         seedProgressFromLastSession()
+        viewModelScope.launch {
+            GeneratedBookStore.changes.collect {
+                generated = withContext(Dispatchers.IO) { generatedRepo.audiobooks() }
+                publishBooks()
+            }
+        }
         val folderUri = _state.value.folderUri
         if (folderUri != null) {
             refreshFolderName(Uri.parse(folderUri))
@@ -259,9 +268,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun markPlayed(ids: Collection<String>) {
-        val durationById = (scanned).associate { it.id to it.durationMs }
+        val durationById = (scanned + generated).associate { it.id to it.durationMs }
         ids.forEach { id ->
-            listened[id] = durationById[id] ?: scanned.firstOrNull { it.id == id }?.durationMs ?: 0L
+            listened[id] = durationById[id] ?: 0L
         }
         persistLongMap(KEY_LISTENED, listened)
         publishBooks()
@@ -270,11 +279,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun delete(ids: Collection<String>) {
         val app = getApplication<Application>()
         ids.forEach { id ->
-            hiddenIds += id
             lastPlayed.remove(id)
             listened.remove(id)
             metadata.remove(id)
             CoverStore.delete(app, id)
+            if (GeneratedBookRepository.isGenerated(id)) {
+                EpubImporter.delete(app, id)
+                generated = generated.filterNot { it.id == id }
+                return@forEach
+            }
+            hiddenIds += id
             val uri = Uri.parse(id)
             val file = DocumentFile.fromSingleUri(app, uri)
                 ?: DocumentFile.fromTreeUri(app, uri)
@@ -318,7 +332,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         scanTotal: Int = _state.value.scanTotal,
         scanLabel: String? = _state.value.scanLabel,
     ) {
-        val decorated = scanned
+        val decorated = (scanned + generated)
             .filterNot { it.id in hiddenIds }
             .map { book ->
                 val extra = metadata[book.id]

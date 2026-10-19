@@ -323,9 +323,9 @@ fun LibraryScreen(
                 )
             }
         } else {
-            val showEmptyState = !hasFolder || (!scanning && shown.isEmpty())
+            val showEmptyState = if (!hasFolder) books.isEmpty() else (!scanning && shown.isEmpty())
             val emptyState: @Composable () -> Unit = {
-                if (!hasFolder) {
+                if (!hasFolder && books.isEmpty()) {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text("Choose your audiobook folder", style = MaterialTheme.typography.titleMedium)

@@ -90,6 +90,7 @@ tasks.named("preBuild") { dependsOn(downloadSherpaOnnx) }
 dependencies {
     implementation(files(sherpaOnnxAar))
     implementation(libs.commons.compress)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -113,6 +114,7 @@ dependencies {
     implementation(libs.jsoup)
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
