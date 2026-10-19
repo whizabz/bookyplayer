@@ -11,6 +11,13 @@ import xyz.saltedchips.bookyplayer.epub.EpubChapter
  */
 data class Cue(val paragraph: Int, val start: Int, val end: Int, val startMs: Long, val endMs: Long)
 
+/** The silences the speech engine adds, shared so timing estimates match the real audio. */
+object Pauses {
+    const val TITLE_SECONDS = 0.9f
+    const val PARAGRAPH_SECONDS = 0.5f
+    const val SENTENCE_SECONDS = 0.15f
+}
+
 object TimingFile {
     fun write(file: File, cues: List<Cue>) {
         val json = JSONArray()
@@ -31,20 +38,30 @@ object TimingFile {
     }.getOrNull()
 
     /**
-     * Rough cues for audio generated before timing was recorded: each piece of text gets a share
-     * of the chapter's audio in proportion to its length. Can drift a little against real speech.
+     * Rough cues for audio generated before timing was recorded. The chapter's known pauses are
+     * taken out of its length first, and the rest is shared between the title and the pieces of
+     * text in proportion to their length. Can still drift a little against real speech.
      */
     fun estimate(chapter: EpubChapter, durationMs: Long, locale: Locale = Locale.ENGLISH): List<Cue> {
         val chunks = TextChunker.chunkParagraphs(Paragraphs.forChapter(chapter), locale, 200)
         if (chunks.isEmpty() || durationMs <= 0L) return emptyList()
-        val total = chunks.sumOf { it.text.length }.coerceAtLeast(1)
-        var done = 0
+        val titleChars = if (chapter.title.isNotBlank()) chapter.title.trim().trimEnd('.').length + 1 else 0
+        val titlePauseMs = if (titleChars > 0) (Pauses.TITLE_SECONDS * 1000).toLong() else 0L
+        val chunkPausesMs = chunks.sumOf { (pauseSeconds(it.endsParagraph) * 1000).toLong() }
+        val speechMs = (durationMs - titlePauseMs - chunkPausesMs).coerceAtLeast(durationMs / 2)
+        val totalChars = (chunks.sumOf { it.text.length } + titleChars).coerceAtLeast(1)
+        val msPerChar = speechMs.toDouble() / totalChars
+        var clock = titleChars * msPerChar + titlePauseMs
         return chunks.map { chunk ->
-            val startMs = durationMs * done / total
-            done += chunk.text.length
-            Cue(chunk.paragraph, chunk.start, chunk.end, startMs, durationMs * done / total)
+            val start = clock
+            val end = start + chunk.text.length * msPerChar
+            clock = end + pauseSeconds(chunk.endsParagraph) * 1000
+            Cue(chunk.paragraph, chunk.start, chunk.end, start.toLong(), end.toLong())
         }
     }
+
+    private fun pauseSeconds(endsParagraph: Boolean) =
+        if (endsParagraph) Pauses.PARAGRAPH_SECONDS else Pauses.SENTENCE_SECONDS
 
     /** The cue being spoken at [positionMs], or null before the first spoken text. */
     fun cueAt(cues: List<Cue>, positionMs: Long): Cue? {

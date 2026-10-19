@@ -47,8 +47,25 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.tts.TimingFile
+import xyz.saltedchips.bookyplayer.tts.Cue
+import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
+import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.produceState
 import xyz.saltedchips.bookyplayer.reader.EpubReaderViewModel
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
+
+/** Where the linked audiobook is, so the reader can offer to jump to the spoken text. */
+data class ReaderSync(
+    val audioBookId: String,
+    val chapterDurationsMs: List<Long>,
+    val loaded: Boolean,
+    val chapterIndex: Int,
+    val positionMs: Long,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +77,7 @@ fun EpubReaderScreen(
     /** For a book that already has audio: regenerate every chapter (null) or one chapter. */
     onRegenerate: ((chapter: Int?) -> Unit)? = null,
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    sync: ReaderSync? = null,
 ) {
     val viewModel: EpubReaderViewModel = viewModel(key = "reader-${book.id}")
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -67,12 +85,61 @@ fun EpubReaderScreen(
     var showChapters by remember { mutableStateOf(false) }
     var showTextMenu by remember { mutableStateOf(false) }
     var showAudioMenu by remember { mutableStateOf(false) }
+    var syncPending by remember { mutableStateOf(false) }
+    var activeVisible by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    // Cues for the chapter the audio is in, to find the paragraph being spoken.
+    val syncCues by produceState<List<Cue>>(
+        initialValue = emptyList(),
+        sync?.audioBookId,
+        sync?.chapterIndex,
+        sync?.loaded,
+        state.chapters.size,
+    ) {
+        val info = sync
+        val chapter = info?.let { state.chapters.getOrNull(it.chapterIndex) }
+        value = if (info == null || chapter == null || !info.loaded) {
+            emptyList()
+        } else {
+            withContext(Dispatchers.IO) {
+                val repo = GeneratedBookStore.of(context)
+                val uuid = GeneratedBookRepository.uuidOf(info.audioBookId)
+                TimingFile.read(repo.chapterTimingFile(uuid, info.chapterIndex))
+                    ?: info.chapterDurationsMs.getOrNull(info.chapterIndex)
+                        ?.let { TimingFile.estimate(chapter, it) }
+                    ?: emptyList()
+            }
+        }
+    }
+    val activeParagraph: Int? = if (sync != null && sync.loaded) {
+        TimingFile.cueAt(syncCues, sync.positionMs)?.paragraph
+    } else {
+        null
+    }
     val colors = MaterialTheme.colorScheme
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = colors.background,
         contentWindowInsets = WindowInsets(0),
+        floatingActionButtonPosition = androidx.compose.material3.FabPosition.Center,
+        floatingActionButton = {
+            val offTarget = sync != null && sync.loaded && activeParagraph != null &&
+                (state.chapterIndex != sync.chapterIndex || !activeVisible)
+            if (offTarget) {
+                androidx.compose.material3.ExtendedFloatingActionButton(
+                    onClick = {
+                        if (sync != null && state.chapterIndex != sync.chapterIndex) {
+                            viewModel.openChapter(sync.chapterIndex)
+                        }
+                        syncPending = true
+                    },
+                    icon = { Icon(BookyIcons.sync, contentDescription = null) },
+                    text = { Text("Sync to audio") },
+                    modifier = Modifier.padding(bottom = bottomPadding),
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -166,6 +233,20 @@ fun EpubReaderScreen(
                             snapshotFlow {
                                 Triple(chapterIndex, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
                             }.collect { (c, i, o) -> if (!listState.isScrollInProgress) viewModel.savePosition(c, i, o) }
+                        }
+                        LaunchedEffect(listState, activeParagraph, sync?.chapterIndex) {
+                            snapshotFlow {
+                                val target = activeParagraph?.plus(1)
+                                sync?.chapterIndex == chapterIndex && target != null &&
+                                    listState.layoutInfo.visibleItemsInfo.any { it.index == target }
+                            }.collect { activeVisible = it }
+                        }
+                        LaunchedEffect(syncPending, activeParagraph, state.chapterIndex) {
+                            val paragraph = activeParagraph
+                            if (syncPending && sync?.chapterIndex == state.chapterIndex && paragraph != null) {
+                                listState.animateScrollToItem(paragraph + 1)
+                                syncPending = false
+                            }
                         }
                         DisposableEffect(listState) {
                             onDispose {

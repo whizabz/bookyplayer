@@ -38,6 +38,8 @@ import xyz.saltedchips.bookyplayer.tts.Cue
 import xyz.saltedchips.bookyplayer.tts.Paragraphs
 import xyz.saltedchips.bookyplayer.tts.TimingFile
 
+private const val HIGHLIGHT_LAG_MS = 350L
+
 /** The spoken pieces of one chapter: the text of each, and when its audio starts. */
 class ReadAlongData(val lines: List<String>, val startsMs: List<Long>) {
     /** Index of the piece being spoken at [positionMs], or -1 before the first one. */
@@ -112,7 +114,8 @@ fun ReadAlongView(
     onSeekTo: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val active = data.activeIndex(positionMs).coerceAtLeast(0)
+    // Switch a moment after the next piece begins, so the text never runs ahead of the voice.
+    val active = data.activeIndex(positionMs - HIGHLIGHT_LAG_MS).coerceAtLeast(0)
     val listState = rememberLazyListState()
     LaunchedEffect(active, data.lines.size) {
         if (data.lines.isNotEmpty()) listState.animateScrollToItem(active)

@@ -32,6 +32,7 @@ object BookyIcons {
     val repeat: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_repeat)
     val menuBook: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_menu_book)
     val sparkle: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_auto_awesome)
+    val sync: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_sync)
     val add: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_add)
     val earSound: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_ear_sound)
 }

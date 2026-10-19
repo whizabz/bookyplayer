@@ -115,9 +115,9 @@ class ChapterSynthesizer(private val engine: KokoroEngine) {
     private class State(val index: Int, val bytes: Long, val total: Int)
 
     companion object {
-        private const val TITLE_PAUSE_SECONDS = 0.9f
-        private const val PARAGRAPH_PAUSE_SECONDS = 0.5f
-        private const val SENTENCE_PAUSE_SECONDS = 0.15f
+        private const val TITLE_PAUSE_SECONDS = Pauses.TITLE_SECONDS
+        private const val PARAGRAPH_PAUSE_SECONDS = Pauses.PARAGRAPH_SECONDS
+        private const val SENTENCE_PAUSE_SECONDS = Pauses.SENTENCE_SECONDS
         private const val MAX_CHUNK_CHARS = 200
 
         private fun pcmFile(output: File) = File(output.parentFile, output.name + ".pcm")

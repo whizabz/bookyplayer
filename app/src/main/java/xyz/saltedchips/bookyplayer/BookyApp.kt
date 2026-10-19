@@ -54,6 +54,7 @@ import xyz.saltedchips.bookyplayer.ui.components.PredictiveBackOverlay
 import xyz.saltedchips.bookyplayer.ui.library.BookDetailScreen
 import xyz.saltedchips.bookyplayer.ui.library.LibraryScreen
 import xyz.saltedchips.bookyplayer.ui.reader.EpubReaderScreen
+import xyz.saltedchips.bookyplayer.ui.reader.ReaderSync
 import xyz.saltedchips.bookyplayer.ui.player.NowPlayingScreen
 import xyz.saltedchips.bookyplayer.ui.settings.PlaceholderCoverScreen
 import xyz.saltedchips.bookyplayer.ui.settings.SettingsScreen
@@ -340,6 +341,17 @@ fun BookyApp(
                                     }
                                 },
                                 bottomPadding = miniPlayerClearance,
+                                sync = book.linkedAudioId
+                                    ?.let { id -> library.playQueue.find { it.id == id } }
+                                    ?.let { audioBook ->
+                                        ReaderSync(
+                                            audioBookId = audioBook.id,
+                                            chapterDurationsMs = audioBook.chapterDurationsMs,
+                                            loaded = player.book?.id == audioBook.id,
+                                            chapterIndex = player.currentChapterIndex,
+                                            positionMs = player.chapterPositionMs,
+                                        )
+                                    },
                                 onBack = { readingBookId = null },
                                 onMakeAudiobook = {
                                     importViewModel.clearImportError()

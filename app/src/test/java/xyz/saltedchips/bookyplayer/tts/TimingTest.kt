@@ -43,12 +43,15 @@ class TimingTest {
     }
 
     @Test
-    fun estimatesCoverTheWholeChapter() {
+    fun estimatesAccountForThePausesAndTheTitle() {
         val chapter = EpubChapter("One", "First paragraph here.\n\nSecond paragraph is a bit longer.")
         val estimated = TimingFile.estimate(chapter, durationMs = 10_000)
         assertEquals(2, estimated.size)
-        assertEquals(0L, estimated.first().startMs)
-        assertEquals(10_000L, estimated.last().endMs)
-        assertTrue(estimated[1].startMs == estimated[0].endMs)
+        // The spoken title and its pause come first, so the text starts after zero.
+        assertTrue(estimated.first().startMs > 900L)
+        assertTrue(estimated.last().endMs < 10_000L)
+        // Paragraph pause sits between the two.
+        assertTrue(estimated[1].startMs - estimated[0].endMs >= 450L)
+        assertTrue(estimated[1].startMs > estimated[0].startMs)
     }
 }
