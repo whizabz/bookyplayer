@@ -326,7 +326,7 @@ class PlaybackService : MediaLibraryService() {
             CommandButton.Builder(
                 if (repeating) CommandButton.ICON_REPEAT_ALL else CommandButton.ICON_REPEAT_OFF,
             )
-                .setDisplayName("Repeat")
+                .setDisplayName("Chapter repeat")
                 .setCustomIconResId(R.drawable.ms_repeat)
                 .setSessionCommand(SessionCommand(COMMAND_REPEAT, android.os.Bundle.EMPTY))
                 .setSlots(CommandButton.SLOT_OVERFLOW)

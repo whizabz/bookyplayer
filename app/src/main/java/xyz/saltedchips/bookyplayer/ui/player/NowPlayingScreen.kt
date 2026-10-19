@@ -1087,10 +1087,10 @@ private fun NowPlayingContent(
                             icon = { Icon(BookyIcons.chapters, contentDescription = null) },
                         )
                         toolbarItem(
-                            menuLabel = "Repeat",
+                            menuLabel = "Chapter repeat",
                             active = player.repeatEnabled,
                             onClick = {
-                                showHint(if (player.repeatEnabled) "Repeat off" else "Repeat on")
+                                showHint(if (player.repeatEnabled) "Chapter repeat off" else "Chapter repeat on")
                                 onToggleRepeat()
                             },
                             icon = { Icon(BookyIcons.repeat, contentDescription = null) },
