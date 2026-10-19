@@ -126,6 +126,8 @@ fun LibraryScreen(
         activeBookId != null && (book.id == activeBookId || book.linkedAudioId == activeBookId)
     }
     var sortMenu by remember { mutableStateOf(false) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     var showConversions by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(openConversionsSignal) {
         if (openConversionsSignal != 0L) showConversions = true
@@ -138,6 +140,22 @@ fun LibraryScreen(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var filter by rememberSaveable { mutableStateOf(LibraryFilter.All) }
     val shown = books.filter { filter.matches(it) }
+    // Keep the top of the list in view while it fills in, until the person scrolls themselves.
+    var userScrolled by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(listState, gridState) {
+        androidx.compose.runtime.snapshotFlow { listState.isScrollInProgress || gridState.isScrollInProgress }
+            .collect { if (it) userScrolled = true }
+    }
+    androidx.compose.runtime.LaunchedEffect(shown.map { it.id }) {
+        if (!userScrolled) {
+            listState.scrollToItem(0)
+            gridState.scrollToItem(0)
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(filter, layout) {
+        listState.scrollToItem(0)
+        gridState.scrollToItem(0)
+    }
     val selectedBooks = books.filter { it.id in selectedIds }
     val toggleSelect: (Audiobook) -> Unit = { book ->
         selectedIds = if (book.id in selectedIds) selectedIds - book.id else selectedIds + book.id
@@ -383,6 +401,7 @@ fun LibraryScreen(
                 bookProgress(book, if (isActive(book)) playbackProgress else null)
             when (layout) {
                 LibraryLayout.Rows -> LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 16.dp,
@@ -424,6 +443,7 @@ fun LibraryScreen(
                             .filter { it.listenedMs > 0L && it.listenedMs < it.durationMs }
                             .maxByOrNull { it.lastPlayedMs }
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 16.dp,
@@ -482,6 +502,7 @@ fun LibraryScreen(
                 }
 
                 LibraryLayout.Grid -> LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(

@@ -1200,22 +1200,6 @@ private fun NowPlayingContent(
                     alpha = if (collapseProgress >= 0.001f) 1f else 1f - readAlongAlpha
                 }
                 .then(
-                    if (isGeneratedBook && collapseProgress < 0.001f && !measurementOnly) {
-                        // Swiping right on the cover turns to the read-along text.
-                        Modifier.pointerInput(readAlong) {
-                            var total = 0f
-                            detectHorizontalDragGestures(
-                                onDragStart = { total = 0f },
-                                onDragCancel = { total = 0f },
-                                onDragEnd = { if (total > swipePx && !readAlong) readAlong = true },
-                                onHorizontalDrag = { _, amount -> total += amount },
-                            )
-                        }
-                    } else {
-                        Modifier
-                    },
-                )
-                .then(
                     if (collapseProgress > 0.55f) {
                         Modifier.clickable(onClick = onExpand)
                     } else {
