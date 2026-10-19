@@ -14,6 +14,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -327,6 +329,7 @@ fun LibraryScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -857,12 +860,14 @@ private fun LibraryScanProgress(
 
 private enum class LibraryFilter(val label: String) {
     All("All"),
+    NotStarted("Not started"),
     InProgress("In progress"),
     Finished("Finished"),
     ;
 
     fun matches(book: Audiobook): Boolean = when (this) {
         All -> true
+        NotStarted -> book.listenedMs <= 0L
         InProgress -> book.listenedMs > 0L && book.listenedMs < book.durationMs
         Finished -> book.durationMs > 0L && book.listenedMs >= book.durationMs
     }
