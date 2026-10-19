@@ -1216,6 +1216,7 @@ private fun NowPlayingContent(
             ReadAlongView(
                 data = readAlongData,
                 positionMs = player.chapterPositionMs,
+                speed = player.speed,
                 onSeekTo = onSeek,
                 modifier = Modifier
                     .offset { coverExpandedOffset.round() }

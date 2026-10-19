@@ -54,4 +54,12 @@ class TimingTest {
         assertTrue(estimated[1].startMs - estimated[0].endMs >= 450L)
         assertTrue(estimated[1].startMs > estimated[0].startMs)
     }
+
+    @Test
+    fun highlightLagScalesWithSpeed() {
+        assertEquals(HIGHLIGHT_LAG_MS, highlightLagMs(1f))
+        assertEquals(HIGHLIGHT_LAG_MS * 2, highlightLagMs(2f))
+        assertTrue(highlightLagMs(0.1f) >= HIGHLIGHT_LAG_MS / 2)
+        assertTrue(highlightLagMs(9f) <= HIGHLIGHT_LAG_MS * 3)
+    }
 }

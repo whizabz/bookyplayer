@@ -49,7 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.tts.TimingFile
 import xyz.saltedchips.bookyplayer.tts.Cue
-import xyz.saltedchips.bookyplayer.tts.HIGHLIGHT_LAG_MS
+import xyz.saltedchips.bookyplayer.tts.highlightLagMs
 import xyz.saltedchips.bookyplayer.ui.components.RoundedHighlightText
 import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
@@ -67,6 +67,7 @@ data class ReaderSync(
     val loaded: Boolean,
     val chapterIndex: Int,
     val positionMs: Long,
+    val speed: Float = 1f,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,7 +115,7 @@ fun EpubReaderScreen(
         }
     }
     val activeCue: Cue? = if (sync != null && sync.loaded) {
-        TimingFile.cueAt(syncCues, sync.positionMs - HIGHLIGHT_LAG_MS)
+        TimingFile.cueAt(syncCues, sync.positionMs - highlightLagMs(sync.speed))
     } else {
         null
     }

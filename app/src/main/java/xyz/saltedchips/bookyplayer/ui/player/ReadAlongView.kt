@@ -45,7 +45,7 @@ import xyz.saltedchips.bookyplayer.epub.EpubChapter
 import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.tts.Cue
-import xyz.saltedchips.bookyplayer.tts.HIGHLIGHT_LAG_MS
+import xyz.saltedchips.bookyplayer.tts.highlightLagMs
 import xyz.saltedchips.bookyplayer.tts.Paragraphs
 import xyz.saltedchips.bookyplayer.tts.TimingFile
 
@@ -123,9 +123,10 @@ fun ReadAlongView(
     positionMs: Long,
     onSeekTo: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    speed: Float = 1f,
 ) {
     // Switch a moment after the next piece begins, so the text never runs ahead of the voice.
-    val active = data.activeIndex(positionMs - HIGHLIGHT_LAG_MS).coerceAtLeast(0)
+    val active = data.activeIndex(positionMs - highlightLagMs(speed)).coerceAtLeast(0)
     val listState = rememberLazyListState()
     var following by remember { mutableStateOf(true) }
     var programmatic by remember { mutableStateOf(false) }

@@ -350,6 +350,7 @@ fun BookyApp(
                                             loaded = player.book?.id == audioBook.id,
                                             chapterIndex = player.currentChapterIndex,
                                             positionMs = player.chapterPositionMs,
+                                            speed = player.speed,
                                         )
                                     },
                                 onBack = { readingBookId = null },

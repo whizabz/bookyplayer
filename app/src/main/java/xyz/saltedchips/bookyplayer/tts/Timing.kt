@@ -14,6 +14,12 @@ data class Cue(val paragraph: Int, val start: Int, val end: Int, val startMs: Lo
 /** The read-along view switches to the next piece this long after it starts, so it never leads the voice. */
 const val HIGHLIGHT_LAG_MS = 350L
 
+/**
+ * Playback positions are in the audio's own time, so at 2x the same wall-clock delay is twice as
+ * much audio. Scale the lag with the speed so the highlight stays just behind the voice.
+ */
+fun highlightLagMs(speed: Float): Long = (HIGHLIGHT_LAG_MS * speed.coerceIn(0.5f, 3f)).toLong()
+
 /** The silences the speech engine adds, shared so timing estimates match the real audio. */
 object Pauses {
     const val TITLE_SECONDS = 0.9f
