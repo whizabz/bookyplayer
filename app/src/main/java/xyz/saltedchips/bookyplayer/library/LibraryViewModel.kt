@@ -49,6 +49,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var scanned = emptyList<Audiobook>()
     private val generatedRepo = GeneratedBookStore.of(application)
     private var generated = emptyList<Audiobook>()
+    private var sourceByAudioId = emptyMap<String, String>()
     private var conversions = emptyList<GeneratedBook>()
     private var fileFingerprints = emptyMap<String, String>()
     private var treeFingerprint: String? = null
@@ -74,6 +75,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             GeneratedBookStore.changes.collect {
                 val all = withContext(Dispatchers.IO) { generatedRepo.all() }
                 generated = all.mapNotNull(generatedRepo::toAudiobook)
+                sourceByAudioId = all.filter { it.sourceId != null }.associate { it.id to it.sourceId!! }
                 conversions = all.filter { it.status != ConversionStatus.Ready }.sortedBy { it.createdAtMs }
                 publishBooks()
             }
@@ -275,7 +277,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun markPlayed(ids: Collection<String>) {
         val durationById = (scanned + generated).associate { it.id to it.durationMs }
         ids.forEach { id ->
-            listened[id] = durationById[id] ?: 0L
+            val target = _state.value.books.find { it.id == id }?.linkedAudioId ?: id
+            listened[target] = durationById[target] ?: 0L
         }
         persistLongMap(KEY_LISTENED, listened)
         publishBooks()
@@ -293,6 +296,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 generated = generated.filterNot { it.id == id }
                 return@forEach
             }
+            // Deleting an ePub also removes the audiobook generated from it.
+            generatedRepo.all().filter { it.sourceId == id }.forEach { EpubImporter.delete(app, it.id) }
             hiddenIds += id
             val uri = Uri.parse(id)
             val file = DocumentFile.fromSingleUri(app, uri)
@@ -378,12 +383,31 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     lastPlayedMs = lastPlayed[book.id] ?: 0L,
                 )
             }
-        val books = sortBooks(decorated)
+        val epubIds = decorated.filter { it.kind == BookKind.Epub }.map { it.id }.toSet()
+        val audioByEpub = decorated
+            .filter { it.kind == BookKind.Audio && sourceByAudioId[it.id] in epubIds }
+            .associateBy { sourceByAudioId.getValue(it.id) }
+        val linkedAudioIds = audioByEpub.values.map { it.id }.toSet()
+        val display = decorated.mapNotNull { book ->
+            when {
+                book.kind == BookKind.Epub -> audioByEpub[book.id]?.let { audio ->
+                    book.copy(
+                        linkedAudioId = audio.id,
+                        durationMs = audio.durationMs,
+                        listenedMs = audio.listenedMs,
+                        lastPlayedMs = maxOf(book.lastPlayedMs, audio.lastPlayedMs),
+                    )
+                } ?: book
+                book.id in linkedAudioIds -> null
+                else -> book
+            }
+        }
+        val books = sortBooks(display)
         _state.update {
             it.copy(
                 books = books,
                 conversions = conversions,
-                playQueue = books.filter { it.kind == BookKind.Audio },
+                playQueue = sortBooks(decorated.filter { it.kind == BookKind.Audio }),
                 scanning = scanning,
                 scanDone = scanDone,
                 scanTotal = scanTotal,

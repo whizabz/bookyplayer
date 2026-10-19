@@ -25,41 +25,54 @@ class ChapterSynthesizer(private val engine: KokoroEngine) {
         speed: Float = 1f,
         locale: Locale = Locale.ENGLISH,
         speakTitle: Boolean = true,
+        timingOutput: File? = null,
         isCancelled: () -> Boolean = { false },
         onProgress: (Float) -> Unit = {},
     ): Long {
         output.parentFile?.mkdirs()
         val pcm = pcmFile(output)
         val state = stateFile(output)
+        val cuesFile = cuesFile(output)
         val items = buildItems(chapter, locale, speakTitle)
         val totalChars = items.sumOf { it.text.length }.coerceAtLeast(1)
         val rate = engine.sampleRate
 
         var startIndex = 0
+        var samplesSoFar = 0L
         val saved = readState(state)
+        val savedCues = cuesFile.takeIf { it.exists() }?.readLines()?.filter { it.isNotBlank() }.orEmpty()
         if (saved != null && saved.total == items.size && saved.index <= items.size &&
-            pcm.exists() && pcm.length() >= saved.bytes
+            pcm.exists() && pcm.length() >= saved.bytes && savedCues.size >= saved.index
         ) {
             RandomAccessFile(pcm, "rw").use { it.setLength(saved.bytes) }
+            cuesFile.writeText(savedCues.take(saved.index).joinToString("\n", postfix = if (saved.index > 0) "\n" else ""))
             startIndex = saved.index
+            samplesSoFar = saved.bytes / 2
         } else {
             pcm.delete()
             state.delete()
+            cuesFile.delete()
         }
 
         var doneChars = items.take(startIndex).sumOf { it.text.length }
         onProgress(doneChars.toFloat() / totalChars)
         if (startIndex < items.size) {
             FileOutputStream(pcm, true).buffered(64 * 1024).use { out ->
-                for (i in startIndex until items.size) {
-                    if (isCancelled()) throw SynthesisCancelled()
-                    val item = items[i]
-                    val samples = engine.generate(item.text, voiceSid, speed)
-                    out.write(toPcm16(samples, (item.pauseSeconds * rate).toInt()))
-                    out.flush()
-                    writeState(state, i + 1, pcm.length(), items.size)
-                    doneChars += item.text.length
-                    onProgress(doneChars.toFloat() / totalChars)
+                FileOutputStream(cuesFile, true).bufferedWriter().use { cues ->
+                    for (i in startIndex until items.size) {
+                        if (isCancelled()) throw SynthesisCancelled()
+                        val item = items[i]
+                        val samples = engine.generate(item.text, voiceSid, speed)
+                        val pause = (item.pauseSeconds * rate).toInt()
+                        out.write(toPcm16(samples, pause))
+                        out.flush()
+                        cues.write("${item.paragraph},${item.start},${item.end},$samplesSoFar,${samplesSoFar + samples.size}\n")
+                        cues.flush()
+                        samplesSoFar += samples.size + pause
+                        writeState(state, i + 1, pcm.length(), items.size)
+                        doneChars += item.text.length
+                        onProgress(doneChars.toFloat() / totalChars)
+                    }
                 }
             }
         }
@@ -79,8 +92,10 @@ class ChapterSynthesizer(private val engine: KokoroEngine) {
                 }
             }
             val duration = writer.finish()
+            timingOutput?.let { TimingFile.write(it, readCues(cuesFile, rate)) }
             pcm.delete()
             state.delete()
+            cuesFile.delete()
             return duration
         } catch (t: Throwable) {
             writer.close()
@@ -89,7 +104,13 @@ class ChapterSynthesizer(private val engine: KokoroEngine) {
         }
     }
 
-    private class Item(val text: String, val pauseSeconds: Float)
+    private class Item(
+        val text: String,
+        val pauseSeconds: Float,
+        val paragraph: Int,
+        val start: Int,
+        val end: Int,
+    )
 
     private class State(val index: Int, val bytes: Long, val total: Int)
 
@@ -101,16 +122,34 @@ class ChapterSynthesizer(private val engine: KokoroEngine) {
 
         private fun pcmFile(output: File) = File(output.parentFile, output.name + ".pcm")
         private fun stateFile(output: File) = File(output.parentFile, output.name + ".state")
+        private fun cuesFile(output: File) = File(output.parentFile, output.name + ".cues")
+
+        private fun readCues(file: File, rate: Int): List<Cue> = file.readLines()
+            .filter { it.isNotBlank() }
+            .map { line ->
+                val p = line.split(',')
+                Cue(
+                    paragraph = p[0].toInt(),
+                    start = p[1].toInt(),
+                    end = p[2].toInt(),
+                    startMs = p[3].toLong() * 1000L / rate,
+                    endMs = p[4].toLong() * 1000L / rate,
+                )
+            }
 
         private fun buildItems(chapter: EpubChapter, locale: Locale, speakTitle: Boolean): List<Item> {
             val items = mutableListOf<Item>()
             if (speakTitle && chapter.title.isNotBlank()) {
-                items += Item(TextNormalizer.normalize(chapter.title.trim().trimEnd('.')) + ".", TITLE_PAUSE_SECONDS)
+                val title = TextNormalizer.normalize(chapter.title.trim().trimEnd('.')) + "."
+                items += Item(title, TITLE_PAUSE_SECONDS, paragraph = -1, start = 0, end = 0)
             }
-            TextChunker.chunk(TextNormalizer.normalize(chapter.text), locale, MAX_CHUNK_CHARS).forEach { chunk ->
+            TextChunker.chunkParagraphs(Paragraphs.forChapter(chapter), locale, MAX_CHUNK_CHARS).forEach { chunk ->
                 items += Item(
-                    chunk.text,
-                    if (chunk.endsParagraph) PARAGRAPH_PAUSE_SECONDS else SENTENCE_PAUSE_SECONDS,
+                    text = TextNormalizer.normalize(chunk.text),
+                    pauseSeconds = if (chunk.endsParagraph) PARAGRAPH_PAUSE_SECONDS else SENTENCE_PAUSE_SECONDS,
+                    paragraph = chunk.paragraph,
+                    start = chunk.start,
+                    end = chunk.end,
                 )
             }
             return items

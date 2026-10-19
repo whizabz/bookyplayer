@@ -95,6 +95,7 @@ class ConvertEpubWorker(
                         voiceSid = book.voiceSid,
                         speed = book.speed,
                         locale = locale,
+                        timingOutput = repo.chapterTimingFile(uuid, index),
                         isCancelled = { !job.isActive },
                         onProgress = { fraction -> maybeNotify(book, index, fraction) },
                     )

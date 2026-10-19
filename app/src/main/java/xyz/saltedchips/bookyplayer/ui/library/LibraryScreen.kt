@@ -122,6 +122,9 @@ fun LibraryScreen(
     conversionProgress: Map<String, xyz.saltedchips.bookyplayer.tts.LiveProgress> = emptyMap(),
     openConversionsSignal: Long = 0L,
 ) {
+    val isActive: (Audiobook) -> Boolean = { book ->
+        activeBookId != null && (book.id == activeBookId || book.linkedAudioId == activeBookId)
+    }
     var sortMenu by remember { mutableStateOf(false) }
     var showConversions by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(openConversionsSignal) {
@@ -377,7 +380,7 @@ fun LibraryScreen(
                 }
             }
             fun progressOf(book: Audiobook) =
-                bookProgress(book, if (book.id == activeBookId) playbackProgress else null)
+                bookProgress(book, if (isActive(book)) playbackProgress else null)
             when (layout) {
                 LibraryLayout.Rows -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -395,9 +398,9 @@ fun LibraryScreen(
                             book = book,
                             index = index,
                             count = shown.size,
-                            progressOverride = if (book.id == activeBookId) playbackProgress else null,
-                            showWavyProgress = book.id == activeBookId && isPlaying,
-                            active = book.id == activeBookId,
+                            progressOverride = if (isActive(book)) playbackProgress else null,
+                            showWavyProgress = isActive(book) && isPlaying,
+                            active = isActive(book),
                             selecting = selecting,
                             selected = book.id in selectedIds,
                             revealed = revealedId == book.id,
@@ -415,7 +418,7 @@ fun LibraryScreen(
                 }
 
                 LibraryLayout.Hero -> {
-                    val heroBook = shown.firstOrNull { it.id == activeBookId }
+                    val heroBook = shown.firstOrNull { isActive(it) }
                         ?: shown
                             .filter { it.kind == BookKind.Audio }
                             .filter { it.listenedMs > 0L && it.listenedMs < it.durationMs }
@@ -436,7 +439,7 @@ fun LibraryScreen(
                                 LibraryHeroCard(
                                     book = heroBook,
                                     progress = progressOf(heroBook),
-                                    playing = heroBook.id == activeBookId && isPlaying,
+                                    playing = isActive(heroBook) && isPlaying,
                                     onOpen = { onOpenBook(heroBook) },
                                     onPlay = { onPlayBook(heroBook) },
                                 )
@@ -459,7 +462,7 @@ fun LibraryScreen(
                             LibraryCompactRow(
                                 book = book,
                                 progress = progressOf(book),
-                                playing = book.id == activeBookId && isPlaying,
+                                playing = isActive(book) && isPlaying,
                                 selecting = selecting,
                                 selected = book.id in selectedIds,
                                 onClick = if (selecting) {
@@ -497,8 +500,8 @@ fun LibraryScreen(
                         LibraryGridItem(
                             book = book,
                             progress = progressOf(book),
-                            playing = book.id == activeBookId && isPlaying,
-                            active = book.id == activeBookId,
+                            playing = isActive(book) && isPlaying,
+                            active = isActive(book),
                             selecting = selecting,
                             selected = book.id in selectedIds,
                             onClick = if (selecting) {
@@ -757,7 +760,7 @@ private fun LibraryRow(
                         )
                     }
                     Text(
-                        if (book.kind == BookKind.Epub) "Read · ${book.chapterCount} chapters" else remainingLabel,
+                        if (book.kind == BookKind.Epub && book.linkedAudioId == null) "Read · ${book.chapterCount} chapters" else remainingLabel,
                         style = MaterialTheme.typography.labelMedium,
                         color = scheme.primary,
                         modifier = Modifier.padding(top = 2.dp),
@@ -784,7 +787,7 @@ private fun LibraryRow(
                             ),
                             modifier = Modifier.size(48.dp),
                         ) {
-                            if (book.kind == BookKind.Epub) {
+                            if (book.kind == BookKind.Epub && book.linkedAudioId == null) {
                                 Icon(BookyIcons.menuBook, contentDescription = "Read")
                             } else {
                                 Icon(

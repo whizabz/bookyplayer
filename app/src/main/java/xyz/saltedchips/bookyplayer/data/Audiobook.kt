@@ -26,6 +26,8 @@ data class Audiobook(
     val addedAtMs: Long = 0L,
     val lastPlayedMs: Long = 0L,
     val kind: BookKind = BookKind.Audio,
+    /** For an ePub entry that has a generated audiobook: the audiobook's id. */
+    val linkedAudioId: String? = null,
 )
 
 fun Audiobook.chapterTotal(): Int {

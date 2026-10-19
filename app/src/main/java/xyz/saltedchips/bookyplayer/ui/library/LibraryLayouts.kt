@@ -195,7 +195,7 @@ internal fun LibraryCompactRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         EpubBadge()
                         Text(
-                            "${book.author} · ${book.chapterCount} chapters",
+                            if (book.linkedAudioId == null) "${book.author} · ${book.chapterCount} chapters" else "${book.author} · ${bookRemainingLabel(book, progress)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = scheme.onSurfaceVariant,
                             maxLines = 1,
@@ -232,7 +232,7 @@ internal fun LibraryCompactRow(
                         ),
                         modifier = Modifier.size(if (progress > 0f) 24.dp else 36.dp),
                     ) {
-                        if (book.kind == BookKind.Epub) {
+                        if (book.kind == BookKind.Epub && book.linkedAudioId == null) {
                             Icon(
                                 BookyIcons.menuBook,
                                 contentDescription = "Read",
@@ -326,7 +326,7 @@ internal fun LibraryGridItem(
                         ),
                         modifier = Modifier.size(if (progress > 0f && !active) 22.dp else 40.dp),
                     ) {
-                        if (book.kind == BookKind.Epub) {
+                        if (book.kind == BookKind.Epub && book.linkedAudioId == null) {
                             Icon(
                                 BookyIcons.menuBook,
                                 contentDescription = "Read",
@@ -351,7 +351,7 @@ internal fun LibraryGridItem(
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp),
         )
         Text(
-            if (book.kind == BookKind.Epub) "ePub · ${book.chapterCount} chapters" else bookRemainingLabel(book, progress),
+            if (book.kind == BookKind.Epub && book.linkedAudioId == null) "ePub · ${book.chapterCount} chapters" else bookRemainingLabel(book, progress),
             style = MaterialTheme.typography.labelMedium,
             color = scheme.onSurfaceVariant,
             maxLines = 1,

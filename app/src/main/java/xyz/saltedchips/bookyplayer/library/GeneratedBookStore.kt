@@ -41,6 +41,7 @@ class GeneratedBookRepository(private val root: File) {
     fun dir(uuid: String) = File(root, uuid)
     fun chapterTextFile(uuid: String, index: Int) = File(dir(uuid), "text/%03d.txt".format(index))
     fun chapterAudioFile(uuid: String, index: Int) = File(dir(uuid), "audio/%03d.m4a".format(index))
+    fun chapterTimingFile(uuid: String, index: Int) = File(dir(uuid), "audio/%03d.timing.json".format(index))
     private fun metaFile(uuid: String) = File(dir(uuid), "book.json")
     fun coverFile(uuid: String): File? =
         dir(uuid).listFiles()?.firstOrNull { it.name.startsWith("cover.") }

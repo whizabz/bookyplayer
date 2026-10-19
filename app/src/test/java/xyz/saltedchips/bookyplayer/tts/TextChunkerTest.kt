@@ -35,4 +35,29 @@ class TextChunkerTest {
     fun ignoresBlankInput() {
         assertTrue(TextChunker.chunk("  \n\n  ").isEmpty())
     }
+
+    @Test
+    fun offsetsPointBackIntoTheOriginalParagraph() {
+        val text = "First sentence here. Second one follows.\n\nNew paragraph."
+        val paragraphs = Paragraphs.split(text)
+        val chunks = TextChunker.chunkParagraphs(paragraphs, maxChars = 25)
+        assertTrue(chunks.size >= 3)
+        chunks.forEach { chunk ->
+            assertEquals(chunk.text, paragraphs[chunk.paragraph].substring(chunk.start, chunk.end))
+        }
+        assertEquals(1, chunks.last().paragraph)
+    }
+
+    @Test
+    fun doesNotSplitAfterAnAbbreviation() {
+        val chunks = TextChunker.chunk("He kept a St. Bernard named Rex.")
+        assertEquals(1, chunks.size)
+        assertEquals("He kept a St. Bernard named Rex.", chunks[0].text)
+    }
+
+    @Test
+    fun dropsAFirstParagraphThatRepeatsTheTitle() {
+        val chapter = xyz.saltedchips.bookyplayer.epub.EpubChapter("Chapter One", "Chapter One\n\nIt began.")
+        assertEquals(listOf("It began."), Paragraphs.forChapter(chapter))
+    }
 }
