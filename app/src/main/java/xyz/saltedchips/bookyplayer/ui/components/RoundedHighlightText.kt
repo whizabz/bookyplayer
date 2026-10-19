@@ -9,9 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -56,16 +57,28 @@ private fun DrawScope.drawRoundedRange(result: TextLayoutResult, start: Int, end
     val lastLine = result.getLineForOffset((end - 1).coerceAtLeast(start))
     val padX = 4.dp.toPx()
     val padY = 1.dp.toPx()
-    val radius = CornerRadius(8.dp.toPx())
+    val round = CornerRadius(8.dp.toPx())
+    val square = CornerRadius.Zero
     for (line in firstLine..lastLine) {
         val left = if (line == firstLine) result.getHorizontalPosition(start, usePrimaryDirection = true) else result.getLineLeft(line)
         val right = if (line == lastLine) result.getHorizontalPosition(end, usePrimaryDirection = true) else result.getLineRight(line)
         if (right <= left) continue
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(left - padX, result.getLineTop(line) - padY),
-            size = Size(right - left + padX * 2, result.getLineBottom(line) - result.getLineTop(line) + padY * 2),
-            cornerRadius = radius,
+        // Only the very start (first line, left side) and the very end (last line, right side) are
+        // rounded; where the highlight wraps from one line to the next, the edges stay straight.
+        val isFirst = line == firstLine
+        val isLast = line == lastLine
+        val box = RoundRect(
+            rect = Rect(
+                left = if (isFirst) left - padX else left,
+                top = result.getLineTop(line) - padY,
+                right = if (isLast) right + padX else right,
+                bottom = result.getLineBottom(line) + padY,
+            ),
+            topLeft = if (isFirst) round else square,
+            bottomLeft = if (isFirst) round else square,
+            topRight = if (isLast) round else square,
+            bottomRight = if (isLast) round else square,
         )
+        drawPath(Path().apply { addRoundRect(box) }, color)
     }
 }
