@@ -646,18 +646,22 @@ private fun NowPlayingContent(
     var showSpeed by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showRemaining by rememberSaveable { mutableStateOf(false) }
-    var boostHint by remember { mutableStateOf<String?>(null) }
-    var lastBoostHint by remember { mutableStateOf("") }
-    var boostHintToken by remember { mutableStateOf(0) }
-    val boostHintAlpha by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (boostHint != null) 1f else 0f,
+    var controlHint by remember { mutableStateOf<String?>(null) }
+    var lastControlHint by remember { mutableStateOf("") }
+    var controlHintToken by remember { mutableStateOf(0) }
+    fun showHint(text: String) {
+        controlHint = text
+        controlHintToken++
+    }
+    val controlHintAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (controlHint != null) 1f else 0f,
         label = "boost-hint",
     )
-    LaunchedEffect(boostHintToken) {
-        val shown = boostHint ?: return@LaunchedEffect
-        lastBoostHint = shown
+    LaunchedEffect(controlHintToken) {
+        val shown = controlHint ?: return@LaunchedEffect
+        lastControlHint = shown
         delay(2_000L)
-        boostHint = null
+        controlHint = null
     }
     var parentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var playSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -804,7 +808,10 @@ private fun NowPlayingContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FilledTonalIconButton(
-                    onClick = { onSeekChapter(chapterIndex - 1) },
+                    onClick = {
+                        showHint("Previous chapter")
+                        onSeekChapter(chapterIndex - 1)
+                    },
                     enabled = chapterIndex > 0,
                     shapes = IconButtonDefaults.shapes(
                         shape = IconButtonDefaults.smallRoundShape,
@@ -831,7 +838,10 @@ private fun NowPlayingContent(
                     )
                 }
                 FilledTonalIconButton(
-                    onClick = { onSeekChapter(chapterIndex + 1) },
+                    onClick = {
+                        showHint("Next chapter")
+                        onSeekChapter(chapterIndex + 1)
+                    },
                     enabled = chapterIndex < chapterCount - 1,
                     shapes = IconButtonDefaults.shapes(
                         shape = IconButtonDefaults.smallRoundShape,
@@ -922,7 +932,10 @@ private fun NowPlayingContent(
                 ) {
                     transportItem(
                         menuLabel = "Back ${player.skipBackSeconds} seconds",
-                        onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
+                        onClick = {
+                            showHint("Back ${player.skipBackSeconds} seconds")
+                            onSkip(-(player.skipBackSeconds * 1_000L))
+                        },
                         enabled = transportLive,
                         modifier = Modifier
                             .onGloballyPositioned { skipSlot = it }
@@ -993,7 +1006,10 @@ private fun NowPlayingContent(
                     )
                     transportItem(
                         menuLabel = "Forward ${player.skipForwardSeconds} seconds",
-                        onClick = { onSkip(player.skipForwardSeconds * 1_000L) },
+                        onClick = {
+                            showHint("Forward ${player.skipForwardSeconds} seconds")
+                            onSkip(player.skipForwardSeconds * 1_000L)
+                        },
                         enabled = transportLive,
                         modifier = Modifier
                             .onGloballyPositioned { skipForwardSlot = it }
@@ -1017,10 +1033,10 @@ private fun NowPlayingContent(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = boostHint ?: lastBoostHint,
+                    text = controlHint ?: lastControlHint,
                     style = MaterialTheme.typography.labelLarge,
                     color = colors.onSurfaceVariant,
-                    modifier = Modifier.graphicsLayer { alpha = boostHintAlpha },
+                    modifier = Modifier.graphicsLayer { alpha = controlHintAlpha },
                 )
             }
             Surface(
@@ -1073,15 +1089,17 @@ private fun NowPlayingContent(
                         toolbarItem(
                             menuLabel = "Repeat",
                             active = player.repeatEnabled,
-                            onClick = onToggleRepeat,
+                            onClick = {
+                                showHint(if (player.repeatEnabled) "Repeat off" else "Repeat on")
+                                onToggleRepeat()
+                            },
                             icon = { Icon(BookyIcons.repeat, contentDescription = null) },
                         )
                         toolbarItem(
                             menuLabel = "Volume boost",
                             active = volumeBoostEnabled,
                             onClick = {
-                                boostHint = if (volumeBoostEnabled) "Volume boost off" else "Volume boost on"
-                                boostHintToken++
+                                showHint(if (volumeBoostEnabled) "Volume boost off" else "Volume boost on")
                                 onToggleVolumeBoost()
                             },
                             icon = { Icon(BookyIcons.earSound, contentDescription = null) },
@@ -1094,12 +1112,18 @@ private fun NowPlayingContent(
                         toolbarItem(
                             menuLabel = "Restart chapter",
                             overflowOnly = true,
-                            onClick = onRestartChapter,
+                            onClick = {
+                                showHint("Chapter restarted")
+                                onRestartChapter()
+                            },
                             icon = { Icon(BookyIcons.restartAlt, contentDescription = null) },
                         )
                         toolbarItem(
                             menuLabel = "Mark book as played",
-                            onClick = onMarkBookPlayed,
+                            onClick = {
+                                showHint("Book marked as played")
+                                onMarkBookPlayed()
+                            },
                             icon = { Icon(BookyIcons.doneAll, contentDescription = null) },
                         )
                         toolbarItem(
