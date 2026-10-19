@@ -396,14 +396,7 @@ fun BookyApp(
                     },
                     onToggleRepeat = playerViewModel::toggleRepeat,
                     volumeBoostEnabled = volumeBoost,
-                    onToggleVolumeBoost = {
-                        playerViewModel.toggleVolumeBoost()
-                        Toast.makeText(
-                            context,
-                            if (volumeBoost) "Volume boost off" else "Volume boost on",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
+                    onToggleVolumeBoost = playerViewModel::toggleVolumeBoost,
                     onCloseBook = {
                         nowPlaying = false
                         playerViewModel.closeBook()

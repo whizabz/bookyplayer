@@ -2,6 +2,7 @@ package xyz.saltedchips.bookyplayer.ui.player
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import kotlinx.coroutines.delay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -645,6 +646,19 @@ private fun NowPlayingContent(
     var showSpeed by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showRemaining by rememberSaveable { mutableStateOf(false) }
+    var boostHint by remember { mutableStateOf<String?>(null) }
+    var lastBoostHint by remember { mutableStateOf("") }
+    var boostHintToken by remember { mutableStateOf(0) }
+    val boostHintAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (boostHint != null) 1f else 0f,
+        label = "boost-hint",
+    )
+    LaunchedEffect(boostHintToken) {
+        val shown = boostHint ?: return@LaunchedEffect
+        lastBoostHint = shown
+        delay(2_000L)
+        boostHint = null
+    }
     var parentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var playSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var skipSlot by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -891,8 +905,8 @@ private fun NowPlayingContent(
 
             Spacer(
                 Modifier
-                    .weight(1f)
-                    .heightIn(min = 40.dp),
+                    .weight(0.7f)
+                    .heightIn(min = 32.dp),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -995,11 +1009,20 @@ private fun NowPlayingContent(
                 }
             }
 
-            Spacer(
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = 40.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .weight(1.3f)
+                    .heightIn(min = 48.dp)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = boostHint ?: lastBoostHint,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.graphicsLayer { alpha = boostHintAlpha },
+                )
+            }
             Surface(
                 shape = RoundedCornerShape(28.dp),
                 color = colors.secondaryContainer,
@@ -1056,8 +1079,12 @@ private fun NowPlayingContent(
                         toolbarItem(
                             menuLabel = "Volume boost",
                             active = volumeBoostEnabled,
-                            onClick = onToggleVolumeBoost,
-                            icon = { Icon(BookyIcons.volumeUp, contentDescription = null) },
+                            onClick = {
+                                boostHint = if (volumeBoostEnabled) "Volume boost off" else "Volume boost on"
+                                boostHintToken++
+                                onToggleVolumeBoost()
+                            },
+                            icon = { Icon(BookyIcons.earSound, contentDescription = null) },
                         )
                         toolbarItem(
                             menuLabel = "Mark chapter as played",

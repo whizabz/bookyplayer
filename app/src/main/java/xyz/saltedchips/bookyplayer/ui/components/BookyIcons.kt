@@ -14,7 +14,7 @@ object BookyIcons {
     val timer: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_timer)
     val skipBack: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_replay)
     val skipForward: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_forward)
-    val chapters: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_list)
+    val chapters: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_toc)
     val more: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_more_horiz)
     val folder: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_create_new_folder)
     val sort: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_sort)
@@ -31,5 +31,5 @@ object BookyIcons {
     val speed: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_speed)
     val repeat: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_repeat)
     val add: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_add)
-    val volumeUp: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_volume_up)
+    val earSound: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_ear_sound)
 }
