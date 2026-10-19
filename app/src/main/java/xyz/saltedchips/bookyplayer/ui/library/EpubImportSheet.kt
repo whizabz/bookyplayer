@@ -121,7 +121,7 @@ private fun VoiceModelStep(
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
 ) {
-    Text("Download the voice first", style = MaterialTheme.typography.titleSmall)
+    Text("Download the speech model first", style = MaterialTheme.typography.titleSmall)
     Text(
         "A one-time download of about 350 MB (Kokoro, Apache-2.0). Wi-Fi is recommended. " +
             "It runs in the background, so you can close this and keep reading. " +

@@ -88,7 +88,7 @@ class ModelDownloadWorker(
             }
             ModelDownloader.finished()
             runCatching { prepareSamples(manager) }
-            notifyResult("Voice ready", "Open an ePub and tap the audio button to generate your audiobook.")
+            notifyResult("Speech model ready", "Open an ePub and tap the audio button to generate your audiobook.")
             Result.success()
         } catch (cancel: CancellationException) {
             ModelDownloader.idle()
@@ -96,7 +96,7 @@ class ModelDownloadWorker(
         } catch (t: Throwable) {
             val message = t.message ?: "Download failed"
             ModelDownloader.failed(message)
-            notifyResult("Voice download failed", message)
+            notifyResult("Speech model download failed", message)
             Result.failure()
         }
     }
@@ -120,7 +120,7 @@ class ModelDownloadWorker(
         }
     }
 
-    private fun progressInfo(progress: Float, title: String = "Downloading audiobook voice"): ForegroundInfo {
+    private fun progressInfo(progress: Float, title: String = "Downloading speech model"): ForegroundInfo {
         ConvertEpubWorker.ensureChannel(applicationContext)
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val percent = (progress * 100).toInt().coerceIn(0, 100)

@@ -296,11 +296,11 @@ fun SettingsScreen(
             if (voiceModelBytes > 0L) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     ListItem(
-                        headlineContent = { Text("Audiobook voice") },
+                        headlineContent = { Text("Audiobook speech model") },
                         supportingContent = {
                             Text(
-                                "The voice used to generate audiobooks from ePubs " +
-                                    "(Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone). " +
+                                "The model that generates audiobooks from ePubs, including all the " +
+                                    "voices you can choose from (Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone). " +
                                     "Deleting it keeps the audiobooks you've already generated, " +
                                     "but you'll need to download it again to generate new ones.",
                             )

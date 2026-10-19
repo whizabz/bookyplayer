@@ -50,7 +50,7 @@ class ConvertEpubWorker(
         var book = repo.load(uuid) ?: return Result.failure()
         val manager = KokoroModelManager(applicationContext)
         if (!manager.isInstalled()) {
-            return fail(book, "The voice model isn't installed.")
+            return fail(book, "The speech model isn't installed.")
         }
         book = book.copy(status = ConversionStatus.Converting, error = null)
         repo.save(book)
