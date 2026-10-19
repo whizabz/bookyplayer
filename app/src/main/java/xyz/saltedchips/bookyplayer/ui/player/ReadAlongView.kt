@@ -3,6 +3,15 @@ package xyz.saltedchips.bookyplayer.ui.player
 import android.content.Context
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import xyz.saltedchips.bookyplayer.ui.components.SyncPill
 import androidx.compose.ui.layout.onSizeChanged
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 import androidx.compose.foundation.layout.fillMaxSize
@@ -72,6 +81,12 @@ class ReadAlongData(val lines: List<String>, val startsMs: List<Long>) {
     companion object {
         val Empty = ReadAlongData(emptyList(), emptyList())
     }
+}
+
+private val keepScrollHere = object : NestedScrollConnection {
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset = available
+
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
 }
 
 /** Loads the chapter text and its timing for a generated audiobook; empty for any other book. */
@@ -158,10 +173,29 @@ fun ReadAlongView(
             }
         }
     }
-    Box(modifier = modifier.onSizeChanged { viewportHeightPx = it.height }) {
+    Box(
+        modifier = modifier
+            .onSizeChanged { viewportHeightPx = it.height }
+            .pointerInput(Unit) {
+                // Anything up-and-down that the list leaves unused stops here, so the player sheet
+                // behind never treats it as a drag towards the mini player.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { change ->
+                            val move = change.positionChange()
+                            if (abs(move.y) > abs(move.x)) change.consume()
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
+    ) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
+                // Scrolling here never hands leftover drag to the player sheet behind it.
+                .nestedScroll(keepScrollHere)
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
@@ -214,11 +248,11 @@ fun ReadAlongView(
         }
         // Shown as soon as the spoken line is out of view or has drifted from its place, in
         // whichever direction you scrolled.
-        if (!following && !activeInPlace && data.lines.isNotEmpty()) {
-            androidx.compose.material3.SmallExtendedFloatingActionButton(
+        // Stays up while you are scrolling, so it never blinks as the spoken line passes its place.
+        val scrolling = listState.isScrollInProgress
+        if (!following && (!activeInPlace || scrolling) && data.lines.isNotEmpty()) {
+            SyncPill(
                 onClick = { following = true },
-                icon = { Icon(BookyIcons.sync, contentDescription = null) },
-                text = { Text("Sync to audio") },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(12.dp),

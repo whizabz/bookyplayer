@@ -51,6 +51,7 @@ import xyz.saltedchips.bookyplayer.tts.TimingFile
 import xyz.saltedchips.bookyplayer.tts.Cue
 import xyz.saltedchips.bookyplayer.tts.highlightLagMs
 import xyz.saltedchips.bookyplayer.ui.components.RoundedHighlightText
+import xyz.saltedchips.bookyplayer.ui.components.SyncPill
 import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 import kotlinx.coroutines.withContext
@@ -131,15 +132,13 @@ fun EpubReaderScreen(
             val offTarget = sync != null && sync.loaded && activeParagraph != null &&
                 (state.chapterIndex != sync.chapterIndex || !activeVisible)
             if (offTarget) {
-                androidx.compose.material3.SmallExtendedFloatingActionButton(
+                SyncPill(
                     onClick = {
                         if (sync != null && state.chapterIndex != sync.chapterIndex) {
                             viewModel.openChapter(sync.chapterIndex)
                         }
                         syncPending = true
                     },
-                    icon = { Icon(BookyIcons.sync, contentDescription = null) },
-                    text = { Text("Sync to audio") },
                     modifier = Modifier.padding(bottom = bottomPadding),
                 )
             }
