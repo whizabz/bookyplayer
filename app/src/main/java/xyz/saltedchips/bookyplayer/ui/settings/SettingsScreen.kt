@@ -298,7 +298,12 @@ fun SettingsScreen(
                     ListItem(
                         headlineContent = { Text("Audiobook voice") },
                         supportingContent = {
-                            Text("Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone")
+                            Text(
+                                "The voice used to generate audiobooks from ePubs " +
+                                    "(Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone). " +
+                                    "Deleting it keeps the audiobooks you've already generated, " +
+                                    "but you'll need to download it again to generate new ones.",
+                            )
                         },
                         trailingContent = {
                             androidx.compose.material3.TextButton(onClick = onDeleteVoiceModel) {
