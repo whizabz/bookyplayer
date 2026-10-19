@@ -3,10 +3,7 @@ package xyz.saltedchips.bookyplayer.ui.player
 import android.content.Context
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -17,7 +14,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.derivedStateOf
@@ -146,7 +142,6 @@ fun ReadAlongView(
     val active = data.activeIndex(positionMs - highlightLagMs(speed)).coerceAtLeast(0)
     val listState = rememberLazyListState()
     var following by remember { mutableStateOf(true) }
-    var programmatic by remember { mutableStateOf(false) }
     var viewportHeightPx by remember { mutableStateOf(0) }
     val density = androidx.compose.ui.platform.LocalDensity.current
     // Where the spoken line rests while following (the list's top padding), and how far off is too far.
@@ -158,39 +153,21 @@ fun ReadAlongView(
             item != null && abs(item.offset - restPx) <= tolerancePx
         }
     }
+    // A finger on the list always stops following, even if it lands during the automatic scroll.
     LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-            if (scrolling && !programmatic) following = false
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) following = false
         }
     }
     LaunchedEffect(data) { following = true }
     LaunchedEffect(active, following, data.lines.size) {
         if (following && data.lines.isNotEmpty()) {
-            programmatic = true
-            try {
-                listState.animateScrollToItem(active)
-            } finally {
-                programmatic = false
-            }
+            listState.animateScrollToItem(active)
         }
     }
     Box(
         modifier = modifier
             .onSizeChanged { viewportHeightPx = it.height }
-            .pointerInput(Unit) {
-                // Anything up-and-down that the list leaves unused stops here, so the player sheet
-                // behind never treats it as a drag towards the mini player.
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    do {
-                        val event = awaitPointerEvent()
-                        event.changes.forEach { change ->
-                            val move = change.positionChange()
-                            if (abs(move.y) > abs(move.x)) change.consume()
-                        }
-                    } while (event.changes.any { it.pressed })
-                }
-            },
     ) {
         BoxWithConstraints(
             modifier = Modifier
