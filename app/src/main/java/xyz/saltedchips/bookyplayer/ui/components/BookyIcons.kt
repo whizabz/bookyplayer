@@ -30,5 +30,6 @@ object BookyIcons {
     val warning: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_warning)
     val speed: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_speed)
     val repeat: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_repeat)
+    val add: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_add)
     val volumeUp: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_volume_up)
 }

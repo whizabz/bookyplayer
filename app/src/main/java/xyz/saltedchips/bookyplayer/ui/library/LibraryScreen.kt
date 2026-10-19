@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.data.formatDuration
+import xyz.saltedchips.bookyplayer.library.GeneratedBook
 import xyz.saltedchips.bookyplayer.library.LibrarySort
 import xyz.saltedchips.bookyplayer.settings.LibraryLayout
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
@@ -112,6 +113,11 @@ fun LibraryScreen(
     bottomContentPadding: Dp = 24.dp,
     selectionBackEnabled: Boolean = true,
     layout: LibraryLayout = LibraryLayout.Rows,
+    conversions: List<GeneratedBook> = emptyList(),
+    onResumeConversion: (String) -> Unit = {},
+    onStopConversion: (String) -> Unit = {},
+    onRemoveConversion: (String) -> Unit = {},
+    onImportEpub: () -> Unit = {},
 ) {
     var sortMenu by remember { mutableStateOf(false) }
     var selecting by rememberSaveable { mutableStateOf(false) }
@@ -237,6 +243,9 @@ fun LibraryScreen(
                         exit = exitToEnd,
                     ) {
                         Row {
+                            IconButton(onClick = onImportEpub) {
+                                Icon(BookyIcons.add, contentDescription = "Make audiobook from ePub")
+                            }
                             Box {
                                 IconButton(onClick = { sortMenu = true }) {
                                     Icon(BookyIcons.sort, contentDescription = "Sort")
@@ -323,7 +332,7 @@ fun LibraryScreen(
                 )
             }
         } else {
-            val showEmptyState = if (!hasFolder) books.isEmpty() else (!scanning && shown.isEmpty())
+            val showEmptyState = if (!hasFolder) books.isEmpty() && conversions.isEmpty() else (!scanning && shown.isEmpty() && conversions.isEmpty())
             val emptyState: @Composable () -> Unit = {
                 if (!hasFolder && books.isEmpty()) {
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -372,6 +381,14 @@ fun LibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (showEmptyState) item("empty-state") { emptyState() }
+                    items(conversions, key = { "conv-" + it.uuid }) { conversion ->
+                        ConversionCard(
+                            book = conversion,
+                            onResume = { onResumeConversion(conversion.id) },
+                            onStop = { onStopConversion(conversion.id) },
+                            onRemove = { onRemoveConversion(conversion.id) },
+                        )
+                    }
                     itemsIndexed(shown, key = { _, book -> book.id }) { index, book ->
                         LibraryBookRow(
                             book = book,
@@ -412,6 +429,14 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (showEmptyState) item("empty-state") { emptyState() }
+                        items(conversions, key = { "conv-" + it.uuid }) { conversion ->
+                            ConversionCard(
+                                book = conversion,
+                                onResume = { onResumeConversion(conversion.id) },
+                                onStop = { onStopConversion(conversion.id) },
+                                onRemove = { onRemoveConversion(conversion.id) },
+                            )
+                        }
                         if (heroBook != null && !selecting) {
                             item("hero") {
                                 LibraryHeroCard(
@@ -473,6 +498,18 @@ fun LibraryScreen(
                 ) {
                     if (showEmptyState) {
                         item("empty-state", span = { GridItemSpan(maxLineSpan) }) { emptyState() }
+                    }
+                    items(
+                        conversions,
+                        key = { "conv-" + it.uuid },
+                        span = { GridItemSpan(maxLineSpan) },
+                    ) { conversion ->
+                        ConversionCard(
+                            book = conversion,
+                            onResume = { onResumeConversion(conversion.id) },
+                            onStop = { onStopConversion(conversion.id) },
+                            onRemove = { onRemoveConversion(conversion.id) },
+                        )
                     }
                     items(shown, key = { it.id }) { book ->
                         LibraryGridItem(

@@ -87,6 +87,9 @@ fun SettingsScreen(
     playbackNotificationsEnabled: Boolean? = null,
     onPlaybackNotificationsClick: () -> Unit = {},
     onOpenPlaceholderCover: () -> Unit = {},
+    onImportEpub: () -> Unit = {},
+    voiceModelBytes: Long = 0L,
+    onDeleteVoiceModel: () -> Unit = {},
     onBack: () -> Unit = {},
     bottomContentPadding: Dp = 16.dp,
     modifier: Modifier = Modifier,
@@ -287,6 +290,34 @@ fun SettingsScreen(
                                 Text(option.name, maxLines = 1)
                             }
                         }
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    ListItem(
+                        headlineContent = { Text("Make audiobook from ePub") },
+                        supportingContent = {
+                            Text("Read an ePub aloud on this phone with a downloadable voice")
+                        },
+                        leadingContent = { Icon(BookyIcons.add, contentDescription = null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable(onClick = onImportEpub),
+                    )
+                    if (voiceModelBytes > 0L) {
+                        ListItem(
+                            headlineContent = { Text("Voice model") },
+                            supportingContent = {
+                                Text("Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone")
+                            },
+                            trailingContent = {
+                                androidx.compose.material3.TextButton(onClick = onDeleteVoiceModel) {
+                                    Text("Delete")
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
                     }
                 }
             }

@@ -33,6 +33,7 @@ data class LibraryUiState(
     val folderName: String? = null,
     val folderPath: String? = null,
     val books: List<Audiobook> = emptyList(),
+    val conversions: List<GeneratedBook> = emptyList(),
     val playQueue: List<Audiobook> = emptyList(),
     val scanning: Boolean = false,
     val scanDone: Int = 0,
@@ -47,6 +48,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var scanned = emptyList<Audiobook>()
     private val generatedRepo = GeneratedBookStore.of(application)
     private var generated = emptyList<Audiobook>()
+    private var conversions = emptyList<GeneratedBook>()
     private var fileFingerprints = emptyMap<String, String>()
     private var treeFingerprint: String? = null
     private val hiddenIds = prefs.getStringSet(KEY_HIDDEN, emptySet())!!.toMutableSet()
@@ -69,7 +71,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         seedProgressFromLastSession()
         viewModelScope.launch {
             GeneratedBookStore.changes.collect {
-                generated = withContext(Dispatchers.IO) { generatedRepo.audiobooks() }
+                val all = withContext(Dispatchers.IO) { generatedRepo.all() }
+                generated = all.mapNotNull(generatedRepo::toAudiobook)
+                conversions = all.filter { it.status != ConversionStatus.Ready }.sortedBy { it.createdAtMs }
                 publishBooks()
             }
         }
@@ -305,6 +309,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         publishBooks()
     }
 
+    fun resumeConversion(bookId: String) = EpubImporter.resume(getApplication(), bookId)
+
+    fun stopConversion(bookId: String) = EpubImporter.cancel(getApplication(), bookId)
+
+    fun removeConversion(bookId: String) {
+        EpubImporter.delete(getApplication(), bookId)
+        lastPlayed.remove(bookId)
+        listened.remove(bookId)
+        persistLongMap(KEY_LAST_PLAYED, lastPlayed)
+        persistLongMap(KEY_LISTENED, listened)
+    }
+
     fun updateMetadata(
         bookId: String,
         title: String,
@@ -365,6 +381,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         _state.update {
             it.copy(
                 books = books,
+                conversions = conversions,
                 playQueue = books,
                 scanning = scanning,
                 scanDone = scanDone,

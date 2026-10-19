@@ -327,3 +327,67 @@ internal fun LibraryGridItem(
         )
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ConversionCard(
+    book: xyz.saltedchips.bookyplayer.library.GeneratedBook,
+    onResume: () -> Unit,
+    onStop: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val total = book.chapters.size.coerceAtLeast(1)
+    val done = book.doneChapters
+    val converting = book.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Converting
+    val failed = book.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Failed
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = if (failed) scheme.errorContainer else scheme.secondaryContainer,
+        contentColor = if (failed) scheme.onErrorContainer else scheme.onSecondaryContainer,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                book.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                when {
+                    failed -> book.error ?: "Conversion failed"
+                    converting -> "Making audiobook · $done of $total chapters"
+                    else -> "Stopped · $done of $total chapters"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            if (!failed) {
+                LinearWavyProgressIndicator(
+                    progress = { done.toFloat() / total },
+                    amplitude = { if (converting) 1f else 0f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                if (converting) {
+                    androidx.compose.material3.TextButton(onClick = onStop) { Text("Stop") }
+                } else {
+                    androidx.compose.material3.TextButton(onClick = onRemove) { Text("Remove") }
+                    androidx.compose.material3.TextButton(onClick = onResume) {
+                        Text(if (failed) "Try again" else "Resume")
+                    }
+                }
+            }
+        }
+    }
+}

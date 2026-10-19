@@ -44,6 +44,8 @@ import xyz.saltedchips.bookyplayer.library.PersistableOpenDocumentTree
 import xyz.saltedchips.bookyplayer.player.PlayerViewModel
 import xyz.saltedchips.bookyplayer.settings.AppearanceViewModel
 import xyz.saltedchips.bookyplayer.theme.BookyTheme
+import xyz.saltedchips.bookyplayer.tts.EpubImportViewModel
+import xyz.saltedchips.bookyplayer.ui.library.EpubImportSheet
 import xyz.saltedchips.bookyplayer.ui.components.PredictiveBackOverlay
 import xyz.saltedchips.bookyplayer.ui.library.BookDetailScreen
 import xyz.saltedchips.bookyplayer.ui.library.LibraryScreen
@@ -87,6 +89,17 @@ fun BookyApp(
     val pickFolder = rememberLauncherForActivityResult(PersistableOpenDocumentTree()) { uri ->
         if (uri != null) libraryViewModel.setFolder(uri)
     }
+    val importViewModel: EpubImportViewModel = viewModel()
+    val importState by importViewModel.state.collectAsStateWithLifecycle()
+    var pendingEpubUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val pickEpub = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            importViewModel.clearImportError()
+            importViewModel.refresh()
+            pendingEpubUri = uri.toString()
+        }
+    }
+    fun launchEpubPicker() = pickEpub.launch(arrayOf("application/epub+zip", "application/octet-stream"))
     val notifyPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {
@@ -254,6 +267,11 @@ fun BookyApp(
                         onOpenBook = { opened -> detailBookId = opened.id },
                         onPlayBook = playBook,
                         onOpenSettings = { showingSettings = true },
+                        conversions = library.conversions,
+                        onResumeConversion = libraryViewModel::resumeConversion,
+                        onStopConversion = libraryViewModel::stopConversion,
+                        onRemoveConversion = libraryViewModel::removeConversion,
+                        onImportEpub = ::launchEpubPicker,
                         bottomContentPadding = 24.dp + miniPlayerClearance,
                         selectionBackEnabled = !libraryCovered,
                         layout = libraryLayout,
@@ -436,6 +454,9 @@ fun BookyApp(
                         }
                     },
                     onOpenPlaceholderCover = { showingPlaceholderCover = true },
+                    onImportEpub = ::launchEpubPicker,
+                    voiceModelBytes = importState.modelBytes,
+                    onDeleteVoiceModel = importViewModel::deleteModel,
                     onBack = {
                         showingPlaceholderCover = false
                         showingSettings = false
@@ -459,6 +480,30 @@ fun BookyApp(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+        }
+        pendingEpubUri?.let { picked ->
+            EpubImportSheet(
+                uri = android.net.Uri.parse(picked),
+                state = importState,
+                onDownload = importViewModel::startDownload,
+                onCancelDownload = importViewModel::cancelDownload,
+                onSelectVoice = importViewModel::setVoice,
+                onPreviewVoice = importViewModel::previewVoice,
+                onConvert = { uri ->
+                    importViewModel.import(uri) {
+                        pendingEpubUri = null
+                        Toast.makeText(
+                            context,
+                            "Making your audiobook in the background",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                },
+                onDismiss = {
+                    importViewModel.cancelDownload()
+                    pendingEpubUri = null
+                },
+            )
         }
         if (showNotificationExplainer) {
             AlertDialog(
