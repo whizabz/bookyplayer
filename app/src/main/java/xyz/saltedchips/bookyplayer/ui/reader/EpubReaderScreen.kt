@@ -81,7 +81,7 @@ fun EpubReaderScreen(
                 },
                 actions = {
                     IconButton(onClick = onMakeAudiobook, enabled = !state.loading && state.error == null) {
-                        Icon(BookyIcons.sparkle, contentDescription = "Make audiobook")
+                        Icon(BookyIcons.sparkle, contentDescription = "Generate audiobook")
                     }
                     IconButton(onClick = { showChapters = true }, enabled = state.chapters.isNotEmpty()) {
                         Icon(BookyIcons.chapters, contentDescription = "Chapters")

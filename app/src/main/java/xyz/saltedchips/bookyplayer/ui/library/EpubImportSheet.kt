@@ -72,7 +72,7 @@ fun EpubImportSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 16.dp),
         ) {
-            Text("Make an audiobook", style = MaterialTheme.typography.headlineSmall)
+            Text("Generate an audiobook", style = MaterialTheme.typography.headlineSmall)
             Text(
                 "Your ePub is read aloud on this phone. Nothing is uploaded.",
                 style = MaterialTheme.typography.bodyMedium,

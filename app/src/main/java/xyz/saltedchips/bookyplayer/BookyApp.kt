@@ -527,7 +527,7 @@ fun BookyApp(
                         pendingEpubUri = null
                         Toast.makeText(
                             context,
-                            "Making your audiobook in the background",
+                            "Generating your audiobook in the background",
                             Toast.LENGTH_LONG,
                         ).show()
                     }

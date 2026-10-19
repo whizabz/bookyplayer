@@ -37,7 +37,7 @@ object EpubImporter {
             val repo = GeneratedBookStore.of(app)
             val sourceId = uri.toString()
             if (repo.all().any { it.sourceId == sourceId && it.status != ConversionStatus.Failed }) {
-                throw EpubParseException("An audiobook from this ePub already exists or is being made.")
+                throw EpubParseException("An audiobook from this ePub already exists or is being generated.")
             }
             val epub = EpubParser.parse(temp)
             val book = repo.create(epub, voiceSid, speed, sourceId = sourceId)

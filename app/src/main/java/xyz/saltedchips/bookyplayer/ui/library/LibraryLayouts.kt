@@ -392,7 +392,7 @@ internal fun ConversionCard(
             Text(
                 when {
                     failed -> book.error ?: "Conversion failed"
-                    converting -> "Making audiobook · $done of $total chapters"
+                    converting -> "Generating audiobook · $done of $total chapters"
                     else -> "Stopped · $done of $total chapters"
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -449,7 +449,7 @@ internal fun EpubBadge(modifier: Modifier = Modifier) {
     }
 }
 
-/** The top-bar badge: a spinner while audiobooks are being made, otherwise their overall progress. */
+/** The top-bar badge: a spinner while audiobooks are being generated, otherwise their overall progress. */
 @Composable
 internal fun ConversionIndicator(conversions: List<xyz.saltedchips.bookyplayer.library.GeneratedBook>) {
     val converting = conversions.any {
@@ -493,7 +493,7 @@ internal fun ConversionsSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Making audiobooks", style = MaterialTheme.typography.headlineSmall)
+            Text("Generating audiobooks", style = MaterialTheme.typography.headlineSmall)
             conversions.forEach { conversion ->
                 ConversionCard(
                     book = conversion,
