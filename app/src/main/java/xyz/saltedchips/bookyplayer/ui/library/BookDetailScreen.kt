@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,7 +86,7 @@ fun BookDetailScreen(
     selectionBackEnabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val isActive = player.book?.id == book.id
     val playing = isActive && player.isPlaying
     val titles = book.chapterTitles.ifEmpty { listOf(book.title) }
@@ -164,11 +166,11 @@ fun BookDetailScreen(
             )
         },
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(
                         when {
-                            !selecting -> book.title
+                            !selecting -> ""
                             selectedIndices.isEmpty() -> "Select chapters"
                             else -> "${selectedIndices.size} selected"
                         },
@@ -307,37 +309,37 @@ fun BookDetailScreen(
                 ) {
                     BookCover(
                         book = book,
-                        modifier = Modifier.size(220.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f),
                         square = false,
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(32.dp),
                     )
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(24.dp))
                     Text(
-                        text = book.author,
-                        style = MaterialTheme.typography.titleMedium,
+                        text = book.title,
+                        style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp),
                     )
-                    if (book.narrator.isNotBlank()) {
-                        Text(
-                            text = "Narrated by ${book.narrator}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
+                    val narrated = book.narrator.takeIf { it.isNotBlank() && it != "Unknown" }
                     Text(
-                        text = book.sourceLabel(),
-                        style = MaterialTheme.typography.labelMedium,
+                        text = if (narrated != null) "${book.author} · Narrated by $narrated" else book.author,
+                        style = MaterialTheme.typography.titleMedium,
                         color = colors.onSurfaceVariant,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp, start = 8.dp, end = 8.dp),
                     )
                     Text(
-                        text = formatDuration(book.durationMs),
+                        text = "${titles.size} chapters · ${formatDuration(book.durationMs)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                     Button(
                         onClick = onPlay,
