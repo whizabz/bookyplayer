@@ -290,7 +290,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setSpeed(speed: Float) {
-        val snapped = ((speed * 10f).roundToInt() / 10f).coerceIn(0.1f, 3f)
+        val snapped = ((speed * 20f).roundToInt() / 20f).coerceIn(0.1f, 3f)
         _state.update { it.copy(speed = snapped) }
         controller?.setPlaybackSpeed(snapped)
         persist()

@@ -28,6 +28,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -37,6 +42,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -46,7 +53,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconButtonShapes
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
@@ -64,7 +70,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -72,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.data.formatDuration
 import xyz.saltedchips.bookyplayer.library.LibrarySort
+import xyz.saltedchips.bookyplayer.settings.LibraryLayout
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 import xyz.saltedchips.bookyplayer.ui.components.RowProgressFill
@@ -102,6 +111,7 @@ fun LibraryScreen(
     onOpenSettings: () -> Unit = {},
     bottomContentPadding: Dp = 24.dp,
     selectionBackEnabled: Boolean = true,
+    layout: LibraryLayout = LibraryLayout.Rows,
 ) {
     var sortMenu by remember { mutableStateOf(false) }
     var selecting by rememberSaveable { mutableStateOf(false) }
@@ -110,7 +120,17 @@ fun LibraryScreen(
     var pendingDelete by remember { mutableStateOf<List<Audiobook>?>(null) }
     var editingBook by remember { mutableStateOf<Audiobook?>(null) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    var filter by rememberSaveable { mutableStateOf(LibraryFilter.All) }
+    val shown = books.filter { filter.matches(it) }
     val selectedBooks = books.filter { it.id in selectedIds }
+    val toggleSelect: (Audiobook) -> Unit = { book ->
+        selectedIds = if (book.id in selectedIds) selectedIds - book.id else selectedIds + book.id
+    }
+    val enterSelect: (Audiobook) -> Unit = { book ->
+        selecting = true
+        selectedIds = setOf(book.id)
+        revealedId = null
+    }
     BackHandler(enabled = selecting && selectionBackEnabled) {
         selecting = false
         selectedIds = emptySet()
@@ -186,6 +206,16 @@ fun LibraryScreen(
                                 Icon(BookyIcons.doneAll, contentDescription = "Mark as played")
                             }
                             IconButton(
+                                onClick = {
+                                    editingBook = selectedBooks.first()
+                                    selecting = false
+                                    selectedIds = emptySet()
+                                },
+                                enabled = selectedBooks.size == 1,
+                            ) {
+                                Icon(BookyIcons.edit, contentDescription = "Edit")
+                            }
+                            IconButton(
                                 onClick = { pendingDelete = selectedBooks },
                                 enabled = selectedBooks.isNotEmpty(),
                             ) {
@@ -253,11 +283,37 @@ fun LibraryScreen(
             )
         },
     ) { innerPadding ->
+        Column(Modifier.fillMaxSize().padding(innerPadding)) {
+        if (books.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LibraryFilter.entries.forEach { option ->
+                    FilterChip(
+                        modifier = Modifier.height(40.dp),
+                        selected = filter == option,
+                        onClick = { filter = option },
+                        label = { Text(option.label) },
+                        shape = RoundedCornerShape(12.dp),
+                        border = null,
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    )
+                }
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
         if (hasFolder && scanning && books.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
                     .padding(horizontal = 32.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -267,79 +323,182 @@ fun LibraryScreen(
                 )
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 24.dp,
-                    bottom = bottomContentPadding,
-                ),
-                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-            ) {
+            val showEmptyState = !hasFolder || (!scanning && shown.isEmpty())
+            val emptyState: @Composable () -> Unit = {
                 if (!hasFolder) {
-                    item("choose-folder") {
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp)) {
-                                Text("Choose your audiobook folder", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "Pick the folder that holds your books. Files in that folder, and folders of files, become titles in your library.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
-                                )
-                                Button(onClick = onChooseFolder) { Text("Choose folder") }
-                            }
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Choose your audiobook folder", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Pick the folder that holds your books. Files in that folder, and folders of files, become titles in your library.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                            )
+                            Button(onClick = onChooseFolder) { Text("Choose folder") }
                         }
                     }
-                } else if (!scanning && books.isEmpty()) {
-                    item("empty") {
-                        Text(
-                            text = if (folderName != null) {
-                                "No audiobooks found in $folderName"
-                            } else {
-                                "No audiobooks found in this folder"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(16.dp),
-                        )
-                    }
-                }
-                itemsIndexed(books, key = { _, book -> book.id }) { index, book ->
-                    LibraryBookRow(
-                        book = book,
-                        index = index,
-                        count = books.size,
-                        progressOverride = if (book.id == activeBookId) playbackProgress else null,
-                        showWavyProgress = book.id == activeBookId && isPlaying,
-                        selecting = selecting,
-                        selected = book.id in selectedIds,
-                        revealed = revealedId == book.id,
-                        onRevealedChange = { open ->
-                            revealedId = if (open) book.id else if (revealedId == book.id) null else revealedId
+                } else if (books.isNotEmpty()) {
+                    Text(
+                        text = "No ${filter.label.lowercase()} books",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                } else {
+                    Text(
+                        text = if (folderName != null) {
+                            "No audiobooks found in $folderName"
+                        } else {
+                            "No audiobooks found in this folder"
                         },
-                        onOpen = { onOpenBook(book) },
-                        onPlay = { onPlayBook(book) },
-                        onToggleSelect = {
-                            selectedIds = if (book.id in selectedIds) {
-                                selectedIds - book.id
-                            } else {
-                                selectedIds + book.id
-                            }
-                        },
-                        onEnterSelect = {
-                            selecting = true
-                            selectedIds = setOf(book.id)
-                            revealedId = null
-                        },
-                        onEdit = { editingBook = book },
-                        onDelete = { pendingDelete = listOf(book) },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
                     )
                 }
             }
+            fun progressOf(book: Audiobook) =
+                bookProgress(book, if (book.id == activeBookId) playbackProgress else null)
+            when (layout) {
+                LibraryLayout.Rows -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 4.dp,
+                        bottom = bottomContentPadding,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (showEmptyState) item("empty-state") { emptyState() }
+                    itemsIndexed(shown, key = { _, book -> book.id }) { index, book ->
+                        LibraryBookRow(
+                            book = book,
+                            index = index,
+                            count = shown.size,
+                            progressOverride = if (book.id == activeBookId) playbackProgress else null,
+                            showWavyProgress = book.id == activeBookId && isPlaying,
+                            active = book.id == activeBookId,
+                            selecting = selecting,
+                            selected = book.id in selectedIds,
+                            revealed = revealedId == book.id,
+                            onRevealedChange = { open ->
+                                revealedId = if (open) book.id else if (revealedId == book.id) null else revealedId
+                            },
+                            onOpen = { onOpenBook(book) },
+                            onPlay = { onPlayBook(book) },
+                            onToggleSelect = { toggleSelect(book) },
+                            onEnterSelect = { enterSelect(book) },
+                            onEdit = { editingBook = book },
+                            onDelete = { pendingDelete = listOf(book) },
+                        )
+                    }
+                }
+
+                LibraryLayout.Hero -> {
+                    val heroBook = shown.firstOrNull { it.id == activeBookId }
+                        ?: shown
+                            .filter { it.listenedMs > 0L && it.listenedMs < it.durationMs }
+                            .maxByOrNull { it.lastPlayedMs }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 4.dp,
+                            bottom = bottomContentPadding,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (showEmptyState) item("empty-state") { emptyState() }
+                        if (heroBook != null && !selecting) {
+                            item("hero") {
+                                LibraryHeroCard(
+                                    book = heroBook,
+                                    progress = progressOf(heroBook),
+                                    playing = heroBook.id == activeBookId && isPlaying,
+                                    onOpen = { onOpenBook(heroBook) },
+                                    onPlay = { onPlayBook(heroBook) },
+                                )
+                            }
+                        }
+                        if (shown.isNotEmpty()) {
+                            item("all-books-label") {
+                                Text(
+                                    "All books",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 4.dp),
+                                )
+                            }
+                        }
+                        items(
+                            shown.filter { selecting || it.id != heroBook?.id },
+                            key = { it.id },
+                        ) { book ->
+                            LibraryCompactRow(
+                                book = book,
+                                progress = progressOf(book),
+                                playing = book.id == activeBookId && isPlaying,
+                                selecting = selecting,
+                                selected = book.id in selectedIds,
+                                onClick = if (selecting) {
+                                    { toggleSelect(book) }
+                                } else {
+                                    { onOpenBook(book) }
+                                },
+                                onLongClick = if (selecting) {
+                                    { toggleSelect(book) }
+                                } else {
+                                    { enterSelect(book) }
+                                },
+                                onPlay = { onPlayBook(book) },
+                            )
+                        }
+                    }
+                }
+
+                LibraryLayout.Grid -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 4.dp,
+                        bottom = bottomContentPadding,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    if (showEmptyState) {
+                        item("empty-state", span = { GridItemSpan(maxLineSpan) }) { emptyState() }
+                    }
+                    items(shown, key = { it.id }) { book ->
+                        LibraryGridItem(
+                            book = book,
+                            progress = progressOf(book),
+                            playing = book.id == activeBookId && isPlaying,
+                            active = book.id == activeBookId,
+                            selecting = selecting,
+                            selected = book.id in selectedIds,
+                            onClick = if (selecting) {
+                                { toggleSelect(book) }
+                            } else {
+                                { onOpenBook(book) }
+                            },
+                            onLongClick = if (selecting) {
+                                { toggleSelect(book) }
+                            } else {
+                                { enterSelect(book) }
+                            },
+                            onPlay = { onPlayBook(book) },
+                        )
+                    }
+                }
+            }
+        }
+        }
         }
     }
 
@@ -392,6 +551,7 @@ private fun LibraryBookRow(
     count: Int,
     progressOverride: Float?,
     showWavyProgress: Boolean,
+    active: Boolean,
     selecting: Boolean,
     selected: Boolean,
     revealed: Boolean,
@@ -404,15 +564,18 @@ private fun LibraryBookRow(
     onDelete: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val itemShapes = ListItemDefaults.segmentedShapes(index = index, count = count)
+    val rowShape = RoundedCornerShape(28.dp)
     val actionWidth = 56.dp
     SwipeToRevealActions(
         revealed = revealed,
         onRevealedChange = onRevealedChange,
         enabled = !selecting,
-        shape = itemShapes.shape,
+        shape = rowShape,
         actionWidth = actionWidth,
         actionCount = 2,
+        actionGap = 8.dp,
+        rowGap = 8.dp,
+        contentBackground = androidx.compose.ui.graphics.Color.Transparent,
         actions = { _ ->
             FilledTonalIconButton(
                 onClick = {
@@ -420,8 +583,8 @@ private fun LibraryBookRow(
                     onEdit()
                 },
                 shapes = IconButtonShapes(
-                    shape = ButtonGroupDefaults.connectedLeadingButtonShape,
-                    pressedShape = ButtonGroupDefaults.connectedLeadingButtonPressShape,
+                    shape = rowShape,
+                    pressedShape = RoundedCornerShape(20.dp),
                 ),
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = colors.primaryContainer,
@@ -439,8 +602,8 @@ private fun LibraryBookRow(
                     onDelete()
                 },
                 shapes = IconButtonShapes(
-                    shape = ButtonGroupDefaults.connectedTrailingButtonShape,
-                    pressedShape = ButtonGroupDefaults.connectedTrailingButtonPressShape,
+                    shape = rowShape,
+                    pressedShape = RoundedCornerShape(20.dp),
                 ),
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = colors.errorContainer,
@@ -456,7 +619,7 @@ private fun LibraryBookRow(
     ) {
         LibraryRow(
             book = book,
-            itemShapes = itemShapes,
+            shape = rowShape,
             progressOverride = progressOverride,
             showWavyProgress = showWavyProgress,
             selecting = selecting,
@@ -465,6 +628,7 @@ private fun LibraryBookRow(
             onLongClick = if (selecting) onToggleSelect else onEnterSelect,
             onPlay = onPlay,
             playing = showWavyProgress,
+            active = active,
         )
     }
 }
@@ -473,7 +637,7 @@ private fun LibraryBookRow(
 @Composable
 private fun LibraryRow(
     book: Audiobook,
-    itemShapes: ListItemShapes,
+    shape: Shape,
     progressOverride: Float?,
     showWavyProgress: Boolean,
     selecting: Boolean,
@@ -482,6 +646,7 @@ private fun LibraryRow(
     onLongClick: () -> Unit,
     onPlay: () -> Unit,
     playing: Boolean,
+    active: Boolean,
 ) {
     val stored = if (book.durationMs == 0L) 0f else (book.listenedMs.toFloat() / book.durationMs).coerceIn(0f, 1f)
     val progress = (progressOverride ?: stored).coerceIn(0f, 1f)
@@ -494,20 +659,20 @@ private fun LibraryRow(
     val scheme = MaterialTheme.colorScheme
     val motion = MaterialTheme.motionScheme
     val container by animateColorAsState(
-        targetValue = if (selected) scheme.secondaryContainer else scheme.surfaceContainer,
+        targetValue = if (selected) scheme.secondaryContainer else scheme.surfaceContainerLow,
         animationSpec = motion.defaultEffectsSpec(),
         label = "library-row-container",
     )
     val showProgress = progress > 0f
     Surface(
-        shape = itemShapes.shape,
+        shape = shape,
         color = container,
         contentColor = if (selected) scheme.onSecondaryContainer else scheme.onSurface,
-        modifier = Modifier.clip(itemShapes.shape),
+        modifier = Modifier.clip(shape),
     ) {
         Box {
             if (showProgress) {
-                RowProgressFill(progress, scheme.primary.copy(alpha = 0.28f))
+                RowProgressFill(progress, scheme.primary.copy(alpha = if (active) 0.2f else 0.12f))
             }
             Row(
                 modifier = Modifier
@@ -517,31 +682,39 @@ private fun LibraryRow(
                         onLongClick = onLongClick,
                         onLongClickLabel = "Select",
                     )
-                    .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.Top,
+                    .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                BookCover(book, Modifier.size(72.dp), corner = 8.dp)
+                BookCover(book, Modifier.size(64.dp), corner = 18.dp)
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .padding(start = 16.dp, end = 12.dp),
                 ) {
-                    Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        book.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         "${book.author} · ${book.narrator}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         remainingLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = scheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = scheme.primary,
+                        modifier = Modifier.padding(top = 2.dp),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Box(
-                    modifier = Modifier.height(72.dp),
+                    modifier = Modifier.height(64.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (selecting) {
@@ -550,14 +723,14 @@ private fun LibraryRow(
                         FilledIconButton(
                             onClick = onPlay,
                             shapes = IconButtonDefaults.shapes(
-                                shape = IconButtonDefaults.smallRoundShape,
+                                shape = if (active) RoundedCornerShape(16.dp) else IconButtonDefaults.smallRoundShape,
                                 pressedShape = IconButtonDefaults.smallPressedShape,
                             ),
                             colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = scheme.primary,
-                                contentColor = scheme.onPrimary,
+                                containerColor = if (active) scheme.primary else scheme.secondaryContainer,
+                                contentColor = if (active) scheme.onPrimary else scheme.onSecondaryContainer,
                             ),
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 if (playing) BookyIcons.pause else BookyIcons.play,
@@ -599,5 +772,18 @@ private fun LibraryScanProgress(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 16.dp),
         )
+    }
+}
+
+private enum class LibraryFilter(val label: String) {
+    All("All"),
+    InProgress("In progress"),
+    Finished("Finished"),
+    ;
+
+    fun matches(book: Audiobook): Boolean = when (this) {
+        All -> true
+        InProgress -> book.listenedMs > 0L && book.listenedMs < book.durationMs
+        Finished -> book.durationMs > 0L && book.listenedMs >= book.durationMs
     }
 }

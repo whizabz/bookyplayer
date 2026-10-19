@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalDensity
@@ -50,12 +52,15 @@ fun SwipeToRevealActions(
     fromStart: Boolean = false,
     onCommit: (() -> Unit)? = null,
     expandActions: Boolean = false,
+    actionGap: Dp = ButtonGroupDefaults.ConnectedSpaceBetween,
+    rowGap: Dp = 0.dp,
+    contentBackground: Color = MaterialTheme.colorScheme.surfaceContainer,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val density = LocalDensity.current
-    val gap = ButtonGroupDefaults.ConnectedSpaceBetween
-    val revealPx = remember(density, actionWidth, actionCount, gap) {
-        with(density) { (actionWidth * actionCount + gap * (actionCount - 1)).toPx() }
+    val gap = actionGap
+    val revealPx = remember(density, actionWidth, actionCount, gap, rowGap) {
+        with(density) { (actionWidth * actionCount + gap * (actionCount - 1) + rowGap).toPx() }
     }
     val revealedAt = if (fromStart) revealPx else -revealPx
     val commitAt = if (onCommit != null) {
@@ -119,7 +124,8 @@ fun SwipeToRevealActions(
                 modifier = Modifier
                     .align(if (fromStart) Alignment.CenterStart else Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .width(actionSlotWidth),
+                    .width(actionSlotWidth)
+                    .padding(start = rowGap),
                 horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.CenterVertically,
                 content = { actions(actionSlotWidth) },
@@ -134,7 +140,7 @@ fun SwipeToRevealActions(
                     enabled = enabled,
                 )
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(contentBackground),
             content = content,
         )
     }

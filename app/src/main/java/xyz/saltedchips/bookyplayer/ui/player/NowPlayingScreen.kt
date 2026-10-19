@@ -2,9 +2,9 @@ package xyz.saltedchips.bookyplayer.ui.player
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -60,10 +60,9 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledIconToggleButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilledTonalIconToggleButton
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -81,6 +80,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.TonalToggleButton
 import androidx.compose.material3.Typography
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -114,6 +116,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.lerp as lerpTextStyle
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -163,6 +168,11 @@ private class ExpandedSlotLock {
     var titleSize by mutableStateOf<IntSize?>(null)
 }
 private val MiniCoverSize = 40.dp
+private val TransportSkipSize = 64.dp
+private val TransportPlaySize = DpSize(104.dp, 80.dp)
+private val TransportGap = 12.dp
+private val TransportPlayShape = RoundedCornerShape(28.dp)
+private val TransportPlayPressedShape = RoundedCornerShape(20.dp)
 private val MiniTitleWidth = 120.dp
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
@@ -635,12 +645,12 @@ private fun NowPlayingContent(
     val chapterDuration = player.chapterDurationMs.toFloat().coerceAtLeast(1f)
     val chapterPosition = player.chapterPositionMs.toFloat().coerceIn(0f, chapterDuration)
     val fadeOut = chromeFade
-    val playExpanded = IconButtonDefaults.extraLargeContainerSize()
-    val skipExpanded = IconButtonDefaults.largeContainerSize()
+    val playExpanded = TransportPlaySize
+    val skipExpanded = DpSize(TransportSkipSize, TransportSkipSize)
     val playSize = lerpSize(playExpanded, DpSize(MiniPlaySize, MiniPlaySize), collapseProgress)
     val skipSize = lerpSize(skipExpanded, DpSize(MiniSkipSize, MiniSkipSize), collapseProgress)
     val statusPx = WindowInsets.statusBars.getTop(density).toFloat()
-    val padExpPx = with(density) { 20.dp.toPx() }
+    val padExpPx = with(density) { 24.dp.toPx() }
     val playW = with(density) { playExpanded.width.toPx() }
     val playH = with(density) { playExpanded.height.toPx() }
     val skipW = with(density) { skipExpanded.width.toPx() }
@@ -660,8 +670,17 @@ private fun NowPlayingContent(
     val measuredSkipForward = slotOffset(parentCoords, skipForwardSlot)
     val measuredTitle = slotOffset(parentCoords, titleSlot)
     val measuredTitleSize = titleSlot?.takeIf { it.isAttached }?.size
+    val transportLive = !measurementOnly && collapseProgress < 0.001f
+    val nominalPlay = IntSize(playW.roundToInt(), playH.roundToInt())
+    val nominalSkip = IntSize(skipW.roundToInt(), skipH.roundToInt())
+    fun IntSize?.near(target: IntSize) = this != null &&
+        abs(width - target.width) <= 1 && abs(height - target.height) <= 1
+    val restingLive = transportLive && transportSettled &&
+        playSlot?.takeIf { it.isAttached }?.size.near(nominalPlay) &&
+        skipSlot?.takeIf { it.isAttached }?.size.near(nominalSkip) &&
+        skipForwardSlot?.takeIf { it.isAttached }?.size.near(nominalSkip)
     SideEffect {
-        if (measurementOnly) {
+        if (measurementOnly || restingLive) {
             measuredPlay?.let { slotLock.play = it }
             measuredSkip?.let { slotLock.skip = it }
             measuredSkipForward?.let { slotLock.skipForward = it }
@@ -672,7 +691,7 @@ private fun NowPlayingContent(
     val titleExpandedOffset = slotLock.title
         ?: Offset(
             padExpPx,
-            coverExpandedOffset.y + coverExpandedSize + with(density) { 16.dp.toPx() },
+            coverExpandedOffset.y + coverExpandedSize + with(density) { 36.dp.toPx() },
         )
     val playExpandedOffset = slotLock.play
         ?: Offset(
@@ -681,12 +700,12 @@ private fun NowPlayingContent(
         )
     val skipExpandedOffset = slotLock.skip
         ?: Offset(
-            playExpandedOffset.x - with(density) { 2.dp.toPx() } - skipW,
+            playExpandedOffset.x - with(density) { TransportGap.toPx() } - skipW,
             playExpandedOffset.y + (playH - skipH) / 2f,
         )
     val skipForwardExpandedOffset = slotLock.skipForward
         ?: Offset(
-            playExpandedOffset.x + playW + with(density) { 2.dp.toPx() },
+            playExpandedOffset.x + playW + with(density) { TransportGap.toPx() },
             playExpandedOffset.y + (playH - skipH) / 2f,
         )
     val coverCollapsedOffset = Offset(
@@ -725,7 +744,7 @@ private fun NowPlayingContent(
     val titleOffset = lerpOffset(titleExpandedOffset, titleCollapsedOffset, collapseProgress)
     val expandedTitleWidth = slotLock.titleSize?.let { with(density) { it.width.toDp() } }
         ?: with(density) { (fullWidthPx - padExpPx * 2f).toDp() }
-    val coverCorner = lerp(16.dp, MiniCoverSize / 2f, collapseProgress)
+    val coverCorner = lerp(32.dp, MiniCoverSize / 2f, collapseProgress)
 
     Box(
         modifier
@@ -736,7 +755,7 @@ private fun NowPlayingContent(
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 24.dp)
                 .graphicsLayer { alpha = 1f - fadeOut },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -754,12 +773,10 @@ private fun NowPlayingContent(
                     .fillMaxWidth()
                     .aspectRatio(1f),
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(36.dp))
             val chapterCount = book.chapterTitles.size.coerceAtLeast(1)
             val chapterIndex = player.currentChapterIndex.coerceIn(0, chapterCount - 1)
-            val chapterButtonSize = IconButtonDefaults.smallContainerSize(
-                IconButtonDefaults.IconButtonWidthOption.Wide,
-            )
+            val chapterButtonSize = 44.dp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -825,7 +842,7 @@ private fun NowPlayingContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(40.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 ChapterSlider(
@@ -866,8 +883,8 @@ private fun NowPlayingContent(
 
             Spacer(
                 Modifier
-                    .weight(0.65f)
-                    .heightIn(min = 12.dp),
+                    .weight(1f)
+                    .heightIn(min = 40.dp),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -878,21 +895,21 @@ private fun NowPlayingContent(
                     overflowIndicator = { menuState ->
                         ButtonGroupDefaults.OverflowIndicator(menuState = menuState)
                     },
+                    horizontalArrangement = Arrangement.spacedBy(TransportGap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     transportItem(
                         menuLabel = "Back ${player.skipBackSeconds} seconds",
                         onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
-                        enabled = false,
-                        animatePress = false,
+                        enabled = transportLive,
                         modifier = Modifier
                             .onGloballyPositioned { skipSlot = it }
-                            .graphicsLayer { alpha = 0f },
+                            .graphicsLayer { alpha = if (transportLive) 1f else 0f },
                         icon = {
                             Icon(
                                 BookyIcons.skipBack,
                                 contentDescription = "Back ${player.skipBackSeconds} seconds",
-                                modifier = Modifier.size(IconButtonDefaults.largeIconSize),
+                                modifier = Modifier.size(28.dp),
                             )
                         },
                     )
@@ -902,11 +919,11 @@ private fun NowPlayingContent(
                             FilledIconToggleButton(
                                 checked = player.isPlaying,
                                 onCheckedChange = { onTogglePlay() },
-                                enabled = false,
+                                enabled = transportLive,
                                 shapes = IconButtonDefaults.toggleableShapes(
-                                    shape = IconButtonDefaults.extraLargeRoundShape,
-                                    pressedShape = IconButtonDefaults.extraLargeRoundShape,
-                                    checkedShape = IconButtonDefaults.extraLargeRoundShape,
+                                    shape = TransportPlayShape,
+                                    pressedShape = TransportPlayPressedShape,
+                                    checkedShape = TransportPlayShape,
                                 ),
                                 colors = IconButtonDefaults.filledIconToggleButtonColors(
                                     containerColor = colors.primary,
@@ -915,9 +932,10 @@ private fun NowPlayingContent(
                                     checkedContentColor = colors.onPrimary,
                                 ),
                                 modifier = Modifier
-                                    .size(IconButtonDefaults.extraLargeContainerSize())
+                                    .size(TransportPlaySize)
+                                    .animateWidth(interactionSource)
                                     .onGloballyPositioned { playSlot = it }
-                                    .graphicsLayer { alpha = 0f },
+                                    .graphicsLayer { alpha = if (transportLive) 1f else 0f },
                                 interactionSource = interactionSource,
                             ) {
                                 Icon(
@@ -927,7 +945,7 @@ private fun NowPlayingContent(
                                         BookyIcons.play
                                     },
                                     contentDescription = if (player.isPlaying) "Pause" else "Play",
-                                    modifier = Modifier.size(IconButtonDefaults.extraLargeIconSize),
+                                    modifier = Modifier.size(36.dp),
                                 )
                             }
                         },
@@ -954,16 +972,15 @@ private fun NowPlayingContent(
                     transportItem(
                         menuLabel = "Forward ${player.skipForwardSeconds} seconds",
                         onClick = { onSkip(player.skipForwardSeconds * 1_000L) },
-                        enabled = false,
-                        animatePress = false,
+                        enabled = transportLive,
                         modifier = Modifier
                             .onGloballyPositioned { skipForwardSlot = it }
-                            .graphicsLayer { alpha = 0f },
+                            .graphicsLayer { alpha = if (transportLive) 1f else 0f },
                         icon = {
                             Icon(
                                 BookyIcons.skipForward,
                                 contentDescription = "Forward ${player.skipForwardSeconds} seconds",
-                                modifier = Modifier.size(IconButtonDefaults.largeIconSize),
+                                modifier = Modifier.size(28.dp),
                             )
                         },
                     )
@@ -972,73 +989,87 @@ private fun NowPlayingContent(
 
             Spacer(
                 Modifier
-                    .weight(1.35f)
-                    .heightIn(min = 24.dp),
+                    .weight(1f)
+                    .heightIn(min = 40.dp),
             )
-            ButtonGroup(
-                overflowIndicator = { menuState ->
-                    ButtonGroupDefaults.OverflowIndicator(
-                        menuState = menuState,
-                        modifier = Modifier.size(
-                            IconButtonDefaults.smallContainerSize(
-                                IconButtonDefaults.IconButtonWidthOption.Wide,
-                            ),
-                        ),
-                        shape = IconButtonDefaults.smallRoundShape,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(),
-                    )
-                },
-                verticalAlignment = Alignment.CenterVertically,
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = colors.secondaryContainer,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                toolbarItem(
-                    menuLabel = "Speed",
-                    extraLabel = if (player.speed != 1f) speedLabel else null,
-                    active = player.speed != 1f || showSpeed,
-                    onClick = { showSpeed = true },
-                    icon = { Icon(BookyIcons.speed, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Sleep timer",
-                    extraLabel = player.sleepTimer?.chipLabel,
-                    active = player.sleepTimer != null || showSleep,
-                    onClick = { showSleep = true },
-                    icon = { Icon(BookyIcons.timer, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Chapters",
-                    active = chaptersOpen,
-                    onClick = onOpenChapters,
-                    icon = { Icon(BookyIcons.chapters, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Repeat",
-                    active = player.repeatEnabled,
-                    onClick = onToggleRepeat,
-                    icon = { Icon(BookyIcons.repeat, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Mark chapter as played",
-                    onClick = { pendingMarkChapterConfirm = true },
-                    icon = { Icon(BookyIcons.check, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Restart chapter",
-                    overflowOnly = true,
-                    onClick = onRestartChapter,
-                    icon = { Icon(BookyIcons.restartAlt, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Mark book as played",
-                    onClick = onMarkBookPlayed,
-                    icon = { Icon(BookyIcons.doneAll, contentDescription = null) },
-                )
-                toolbarItem(
-                    menuLabel = "Close book",
-                    onClick = onCloseBook,
-                    icon = { Icon(BookyIcons.book2, contentDescription = null) },
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ButtonGroup(
+                        overflowIndicator = { menuState ->
+                            ButtonGroupDefaults.OverflowIndicator(
+                                menuState = menuState,
+                                modifier = Modifier.size(
+                                    IconButtonDefaults.smallContainerSize(
+                                        IconButtonDefaults.IconButtonWidthOption.Wide,
+                                    ),
+                                ),
+                                shape = IconButtonDefaults.smallRoundShape,
+                                colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSecondaryContainer),
+                            )
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        toolbarItem(
+                            menuLabel = "Speed",
+                            extraLabel = if (player.speed != 1f) speedLabel else null,
+                            active = player.speed != 1f || showSpeed,
+                            onClick = { showSpeed = true },
+                            icon = { Icon(BookyIcons.speed, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Sleep timer",
+                            extraLabel = player.sleepTimer?.chipLabel,
+                            active = player.sleepTimer != null || showSleep,
+                            onClick = { showSleep = true },
+                            icon = { Icon(BookyIcons.timer, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Chapters",
+                            active = chaptersOpen,
+                            onClick = onOpenChapters,
+                            icon = { Icon(BookyIcons.chapters, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Repeat",
+                            active = player.repeatEnabled,
+                            onClick = onToggleRepeat,
+                            icon = { Icon(BookyIcons.repeat, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Mark chapter as played",
+                            onClick = { pendingMarkChapterConfirm = true },
+                            icon = { Icon(BookyIcons.check, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Restart chapter",
+                            overflowOnly = true,
+                            onClick = onRestartChapter,
+                            icon = { Icon(BookyIcons.restartAlt, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Mark book as played",
+                            onClick = onMarkBookPlayed,
+                            icon = { Icon(BookyIcons.doneAll, contentDescription = null) },
+                        )
+                        toolbarItem(
+                            menuLabel = "Close book",
+                            onClick = onCloseBook,
+                            icon = { Icon(BookyIcons.book2, contentDescription = null) },
+                        )
+                    }
+                }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(24.dp))
         }
 
         val miniFillT = ((collapseProgress - 0.5f) / 0.5f).coerceIn(0f, 1f)
@@ -1088,7 +1119,7 @@ private fun NowPlayingContent(
                     },
                 ),
         )
-        if (!measurementOnly) {
+        if (!measurementOnly && !transportLive) {
             CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
                 FilledTonalIconButton(
                     onClick = { onSkip(-(player.skipBackSeconds * 1_000L)) },
@@ -1106,7 +1137,7 @@ private fun NowPlayingContent(
                         contentDescription = "Back ${player.skipBackSeconds} seconds",
                         modifier = Modifier.size(
                             lerp(
-                                IconButtonDefaults.largeIconSize,
+                                28.dp,
                                 24.dp,
                                 collapseProgress,
                             ),
@@ -1117,9 +1148,9 @@ private fun NowPlayingContent(
                     checked = player.isPlaying,
                     onCheckedChange = { onTogglePlay() },
                     shapes = IconButtonDefaults.toggleableShapes(
-                        shape = IconButtonDefaults.extraLargeRoundShape,
-                        pressedShape = IconButtonDefaults.extraLargeRoundShape,
-                        checkedShape = IconButtonDefaults.extraLargeRoundShape,
+                        shape = TransportPlayShape,
+                        pressedShape = TransportPlayPressedShape,
+                        checkedShape = TransportPlayShape,
                     ),
                     colors = IconButtonDefaults.filledIconToggleButtonColors(
                         containerColor = colors.primary,
@@ -1136,7 +1167,7 @@ private fun NowPlayingContent(
                         contentDescription = if (player.isPlaying) "Pause" else "Play",
                         modifier = Modifier.size(
                             lerp(
-                                IconButtonDefaults.extraLargeIconSize,
+                                36.dp,
                                 24.dp,
                                 collapseProgress,
                             ),
@@ -1159,7 +1190,7 @@ private fun NowPlayingContent(
                         contentDescription = "Forward ${player.skipForwardSeconds} seconds",
                         modifier = Modifier.size(
                             lerp(
-                                IconButtonDefaults.largeIconSize,
+                                28.dp,
                                 24.dp,
                                 collapseProgress,
                             ),
@@ -1272,7 +1303,7 @@ private fun ButtonGroupScope.transportItem(
                     pressedShape = IconButtonDefaults.largePressedShape,
                 ),
                 modifier = Modifier
-                    .size(IconButtonDefaults.largeContainerSize())
+                    .size(TransportSkipSize)
                     .then(
                         if (animatePress) {
                             Modifier.animateWidth(interactionSource)
@@ -1351,67 +1382,42 @@ private fun PlayerToolbarButton(
     icon: @Composable () -> Unit,
 ) {
     if (extraLabel == null) {
-        val container = IconButtonDefaults.smallContainerSize(
-            IconButtonDefaults.IconButtonWidthOption.Wide,
+        FilledTonalIconToggleButton(
+            checked = active,
+            onCheckedChange = { onClick() },
+            shapes = IconButtonDefaults.toggleableShapes(),
+            colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                checkedContainerColor = MaterialTheme.colorScheme.primary,
+                checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+            modifier = modifier.size(
+                IconButtonDefaults.smallContainerSize(
+                    IconButtonDefaults.IconButtonWidthOption.Wide,
+                ),
+            ),
+            interactionSource = interactionSource,
+            content = icon,
         )
-        val shapes = IconButtonDefaults.shapes(
-            shape = if (active) {
-                IconButtonDefaults.smallSquareShape
-            } else {
-                IconButtonDefaults.smallRoundShape
-            },
-            pressedShape = IconButtonDefaults.smallPressedShape,
-        )
-        val buttonModifier = modifier.size(container)
-        if (active) {
-            FilledIconButton(
-                onClick = onClick,
-                shapes = shapes,
-                modifier = buttonModifier,
-                interactionSource = interactionSource,
-                content = icon,
-            )
-        } else {
-            FilledTonalIconButton(
-                onClick = onClick,
-                shapes = shapes,
-                modifier = buttonModifier,
-                interactionSource = interactionSource,
-                content = icon,
-            )
-        }
         return
     }
 
-    val height = ButtonDefaults.ExtraSmallContainerHeight
-    val shapes = ButtonDefaults.shapes(
-        shape = if (active) ButtonDefaults.squareShape else ButtonDefaults.shapesFor(height).shape,
-        pressedShape = ButtonDefaults.extraSmallPressedShape,
-    )
-    val buttonModifier = modifier.height(height)
-    val padding = ButtonDefaults.contentPaddingFor(height, hasStartIcon = true)
-    val content: @Composable RowScope.() -> Unit = {
+    val height = ButtonDefaults.MinHeight
+    ToggleButton(
+        checked = active,
+        onCheckedChange = { onClick() },
+        shapes = ToggleButtonDefaults.shapesFor(height),
+        modifier = modifier.height(height),
+        contentPadding = ButtonDefaults.contentPaddingFor(height, hasStartIcon = true),
+        interactionSource = interactionSource,
+    ) {
         icon()
         Spacer(Modifier.size(ButtonDefaults.iconSpacingFor(height)))
-        Text(extraLabel, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-    }
-    if (active) {
-        Button(
-            onClick = onClick,
-            shapes = shapes,
-            modifier = buttonModifier,
-            contentPadding = padding,
-            interactionSource = interactionSource,
-            content = content,
-        )
-    } else {
-        FilledTonalButton(
-            onClick = onClick,
-            shapes = shapes,
-            modifier = buttonModifier,
-            contentPadding = padding,
-            interactionSource = interactionSource,
-            content = content,
+        Text(
+            extraLabel,
+            style = ButtonDefaults.textStyleFor(height),
+            maxLines = 1,
         )
     }
 }
@@ -1429,7 +1435,7 @@ private fun ChapterSlider(
     val colors = SliderDefaults.colors()
     val interactionSource = remember { MutableInteractionSource() }
     val thumbGap = 6.dp
-    val thumbSize = DpSize(4.dp, 52.dp)
+    val thumbSize = DpSize(4.dp, 28.dp)
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Slider(
             value = value,
@@ -1564,11 +1570,19 @@ private const val SpeedMin = 0.1f
 private const val SpeedMax = 3f
 /** Discrete 0.1× steps between the endpoints (0.2× … 2.9×). */
 private const val SpeedSteps = 28
+/** Half of the M3 expressive slider handle width, so labels sit under the thumb. */
+private val SpeedSliderThumbInset = 2.dp
+private val SpeedSliderAxisLabels = listOf(SpeedMin, 1f, SpeedMax)
 
 private fun formatSpeed(speed: Float): String =
     "${speed.toString().trimEnd('0').trimEnd('.')}×"
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun formatSpeedPreset(speed: Float): String =
+    speed.toString().trimEnd('0').trimEnd('.')
+
+private val SpeedPresets = listOf(0.5f, 1f, 1.5f, 1.75f, 2f, 2.5f, 3f)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SpeedSheet(
     speed: Float,
@@ -1636,29 +1650,75 @@ private fun SpeedSheet(
                     )
                 },
             )
+            SpeedSliderLabels(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp + SpeedSliderThumbInset),
+            )
+            val selectedStep = (speed * 20f).roundToInt()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(start = 24.dp, end = 24.dp, top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(
+                    ButtonGroupDefaults.ConnectedSpaceBetween,
+                ),
             ) {
-                Text(
-                    text = formatSpeed(SpeedMin),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = "1×",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = formatSpeed(SpeedMax),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                SpeedPresets.forEachIndexed { index, preset ->
+                    TonalToggleButton(
+                        checked = selectedStep == (preset * 20f).roundToInt(),
+                        onCheckedChange = { checked ->
+                            if (checked) onSetSpeed(preset)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { role = Role.RadioButton },
+                        shapes = when (index) {
+                            0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                            SpeedPresets.lastIndex ->
+                                ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        },
+                    ) {
+                        Text(
+                            text = formatSpeedPreset(preset),
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun SpeedSliderLabels(modifier: Modifier = Modifier) {
+    val span = SpeedMax - SpeedMin
+    Box(modifier) {
+        SpeedSliderAxisLabels.forEach { value ->
+            val fraction = ((value - SpeedMin) / span).coerceIn(0f, 1f)
+            Text(
+                text = formatSpeed(value),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.layout { measurable, constraints ->
+                    val placeable = measurable.measure(
+                        constraints.copy(minWidth = 0, minHeight = 0),
+                    )
+                    val maxX = (constraints.maxWidth - placeable.width).coerceAtLeast(0)
+                    val x = when {
+                        fraction <= 0f -> 0
+                        fraction >= 1f -> maxX
+                        else -> (constraints.maxWidth * fraction - placeable.width / 2f)
+                            .roundToInt()
+                            .coerceIn(0, maxX)
+                    }
+                    layout(constraints.maxWidth, placeable.height) {
+                        placeable.placeRelative(x, 0)
+                    }
+                },
+            )
         }
     }
 }

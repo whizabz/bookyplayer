@@ -61,6 +61,7 @@ fun BookyApp(
     val colorTheme by appearanceViewModel.colorTheme.collectAsStateWithLifecycle()
     val accentColor by appearanceViewModel.accentColor.collectAsStateWithLifecycle()
     val contrastPreference by appearanceViewModel.contrastPreference.collectAsStateWithLifecycle()
+    val libraryLayout by appearanceViewModel.libraryLayout.collectAsStateWithLifecycle()
     val placeholderCover by appearanceViewModel.placeholderCover.collectAsStateWithLifecycle()
     val notificationsPrompted by appearanceViewModel.notificationsPrompted.collectAsStateWithLifecycle()
     val library by libraryViewModel.state.collectAsStateWithLifecycle()
@@ -253,6 +254,7 @@ fun BookyApp(
                         onOpenSettings = { showingSettings = true },
                         bottomContentPadding = 24.dp + miniPlayerClearance,
                         selectionBackEnabled = !libraryCovered,
+                        layout = libraryLayout,
                         modifier = if (libraryCovered) {
                             screenModifier.clearAndSetSemantics { }
                         } else {
@@ -398,6 +400,8 @@ fun BookyApp(
                     onAccentColorChange = appearanceViewModel::setAccentColor,
                     contrastPreference = contrastPreference,
                     onContrastPreferenceChange = appearanceViewModel::setContrastPreference,
+                    libraryLayout = libraryLayout,
+                    onLibraryLayoutChange = appearanceViewModel::setLibraryLayout,
                     skipBackSeconds = player.skipBackSeconds,
                     skipForwardSeconds = player.skipForwardSeconds,
                     onSkipBackSecondsChange = playerViewModel::setSkipBackSeconds,

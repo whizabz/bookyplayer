@@ -58,6 +58,7 @@ import xyz.saltedchips.bookyplayer.settings.AccentColor
 import xyz.saltedchips.bookyplayer.settings.AppearanceMode
 import xyz.saltedchips.bookyplayer.settings.ColorTheme
 import xyz.saltedchips.bookyplayer.settings.ContrastPreference
+import xyz.saltedchips.bookyplayer.settings.LibraryLayout
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -71,6 +72,8 @@ fun SettingsScreen(
     onAccentColorChange: (AccentColor) -> Unit = {},
     contrastPreference: ContrastPreference = ContrastPreference.System,
     onContrastPreferenceChange: (ContrastPreference) -> Unit = {},
+    libraryLayout: LibraryLayout = LibraryLayout.Rows,
+    onLibraryLayoutChange: (LibraryLayout) -> Unit = {},
     skipBackSeconds: Int = 10,
     skipForwardSeconds: Int = 10,
     onSkipBackSecondsChange: (Int) -> Unit = {},
@@ -285,6 +288,22 @@ fun SettingsScreen(
                             }
                         }
                     }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(bottom = 16.dp)) {
+                    ListItem(
+                        headlineContent = { Text("Library layout") },
+                        supportingContent = {
+                            Text("Choose how your books are laid out")
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    LibraryLayoutPicker(
+                        selected = libraryLayout,
+                        onSelect = onLibraryLayoutChange,
+                    )
                 }
             }
 

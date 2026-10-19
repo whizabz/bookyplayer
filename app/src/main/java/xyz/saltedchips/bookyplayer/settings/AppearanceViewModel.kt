@@ -29,6 +29,12 @@ enum class AccentColor(val seed: Color) {
     Graphite(Color(0xFFB7BDC4)),
 }
 
+enum class LibraryLayout(val label: String) {
+    Rows("Rows"),
+    Hero("Hero"),
+    Grid("Grid"),
+}
+
 enum class ContrastPreference {
     System,
     Default,
@@ -56,6 +62,12 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         ) { ContrastPreference.System },
     )
     val contrastPreference: StateFlow<ContrastPreference> = _contrastPreference
+
+    private val _libraryLayout = MutableStateFlow(
+        LibraryLayout.entries.find { it.name == prefs.getString(KEY_LIBRARY_LAYOUT, null) }
+            ?: LibraryLayout.Rows,
+    )
+    val libraryLayout: StateFlow<LibraryLayout> = _libraryLayout
 
     private val _placeholderCover = MutableStateFlow(loadPlaceholderCover())
     val placeholderCover: StateFlow<PlaceholderCoverStyle> = _placeholderCover
@@ -95,6 +107,11 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
     fun setContrastPreference(preference: ContrastPreference) {
         prefs.edit().putInt(KEY_CONTRAST, preference.ordinal).apply()
         _contrastPreference.value = preference
+    }
+
+    fun setLibraryLayout(layout: LibraryLayout) {
+        prefs.edit().putString(KEY_LIBRARY_LAYOUT, layout.name).apply()
+        _libraryLayout.value = layout
     }
 
     fun setPlaceholderCover(style: PlaceholderCoverStyle) {
@@ -160,6 +177,7 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         const val KEY_COLOR_THEME_NAME = "color_theme_name"
         const val KEY_ACCENT_COLOR = "accent_color"
         const val KEY_CONTRAST = "contrast_preference"
+        const val KEY_LIBRARY_LAYOUT = "library_layout"
         const val KEY_PROGRESS_BAR = "progress_bar_style"
         const val KEY_PLACEHOLDER_SHAPE = "placeholder_cover_shape"
         const val KEY_PLACEHOLDER_FONT = "placeholder_cover_font"
