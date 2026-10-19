@@ -118,6 +118,7 @@ fun LibraryScreen(
     onResumeConversion: (String) -> Unit = {},
     onStopConversion: (String) -> Unit = {},
     onRemoveConversion: (String) -> Unit = {},
+    onPlayConversion: (String) -> Unit = {},
 ) {
     var sortMenu by remember { mutableStateOf(false) }
     var showConversions by rememberSaveable { mutableStateOf(false) }
@@ -521,6 +522,10 @@ fun LibraryScreen(
             onResume = onResumeConversion,
             onStop = onStopConversion,
             onRemove = onRemoveConversion,
+            onPlay = { id ->
+                showConversions = false
+                onPlayConversion(id)
+            },
             onDismiss = { showConversions = false },
         )
     } else if (showConversions) {

@@ -178,6 +178,36 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * A generated audiobook that is still being made gains chapters over time. When the book
+     * that is loaded in the player grows, queue the new chapters so playback carries on into them.
+     */
+    fun extendBook(updated: Audiobook) {
+        val current = _state.value.book ?: return
+        if (current.id != updated.id || updated.mediaUris.size <= current.mediaUris.size) return
+        val oldCount = current.mediaUris.size
+        val newItems = updated.toMediaItems(getApplication()).drop(oldCount)
+        if (controller != null && controller!!.mediaItemCount == oldCount) {
+            controller!!.addMediaItems(newItems)
+        }
+        _state.update { state ->
+            val playing = state.book ?: return@update state
+            state.copy(
+                book = playing.copy(
+                    mediaUris = updated.mediaUris,
+                    chapterTitles = updated.chapterTitles,
+                    chapterDurationsMs = updated.chapterDurationsMs,
+                    chapterStartMs = updated.chapterStartMs,
+                    chapterCount = updated.chapterCount,
+                    fileCount = updated.fileCount,
+                    durationMs = updated.durationMs,
+                ),
+                bookDurationMs = updated.durationMs.coerceAtLeast(1L),
+                finished = false,
+            )
+        }
+    }
+
     fun bindLibrary(books: List<Audiobook>) {
         libraryBooks = books
         val playerHasQueue = (controller?.mediaItemCount ?: 0) > 0

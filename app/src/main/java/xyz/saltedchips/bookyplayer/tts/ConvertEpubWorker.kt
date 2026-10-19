@@ -75,6 +75,7 @@ class ConvertEpubWorker(
                 book = book.withChapterDone(index, duration)
                 repo.save(book)
                 GeneratedBookStore.notifyChanged()
+                if (book.doneChapters == 1 && book.chapters.size > 1) notifyFirstChapter(book)
             }
             repo.save(book.copy(status = ConversionStatus.Ready, error = null))
             GeneratedBookStore.notifyChanged()
@@ -135,6 +136,27 @@ class ConvertEpubWorker(
         }
     }
 
+    private fun notifyFirstChapter(book: GeneratedBook) {
+        ensureChannel(applicationContext)
+        val open = android.app.PendingIntent.getActivity(
+            applicationContext,
+            0,
+            android.content.Intent(applicationContext, xyz.saltedchips.bookyplayer.MainActivity::class.java).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val manager = applicationContext.getSystemService(NotificationManager::class.java)
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ms_book_2)
+            .setContentTitle("Chapter 1 is ready")
+            .setContentText("${book.title}: start listening while the rest is made.")
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        runCatching { manager.notify(FIRST_CHAPTER_NOTIFICATION_ID, notification) }
+    }
+
     private fun notifyDone(book: GeneratedBook) {
         ensureChannel(applicationContext)
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
@@ -152,6 +174,7 @@ class ConvertEpubWorker(
         internal const val CHANNEL_ID = "epub_conversion"
         private const val NOTIFICATION_ID = 4101
         private const val DONE_NOTIFICATION_ID = 4102
+        private const val FIRST_CHAPTER_NOTIFICATION_ID = 4105
 
         internal fun ensureChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java)

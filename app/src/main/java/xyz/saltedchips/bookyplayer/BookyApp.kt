@@ -134,6 +134,10 @@ fun BookyApp(
     LaunchedEffect(player.book?.id) {
         player.book?.id?.let(libraryViewModel::touchLastPlayed)
     }
+    val liveBook = library.books.find { it.id == player.book?.id }
+    LaunchedEffect(liveBook?.id, liveBook?.mediaUris?.size) {
+        liveBook?.let(playerViewModel::extendBook)
+    }
     val listenByBook = remember { mutableMapOf<String, Long>() }
     player.book?.id?.let { listenByBook[it] = player.bookPositionMs }
     DisposableEffect(player.book?.id) {
@@ -277,6 +281,9 @@ fun BookyApp(
                         onResumeConversion = libraryViewModel::resumeConversion,
                         onStopConversion = libraryViewModel::stopConversion,
                         onRemoveConversion = libraryViewModel::removeConversion,
+                        onPlayConversion = { id ->
+                            library.books.find { it.id == id }?.let(playBook)
+                        },
                         bottomContentPadding = 24.dp + miniPlayerClearance,
                         selectionBackEnabled = !libraryCovered,
                         layout = libraryLayout,

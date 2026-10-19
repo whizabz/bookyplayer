@@ -368,6 +368,7 @@ internal fun ConversionCard(
     onResume: () -> Unit,
     onStop: () -> Unit,
     onRemove: () -> Unit,
+    onPlay: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -418,6 +419,11 @@ internal fun ConversionCard(
                     androidx.compose.material3.TextButton(onClick = onRemove) { Text("Remove") }
                     androidx.compose.material3.TextButton(onClick = onResume) {
                         Text(if (failed) "Try again" else "Resume")
+                    }
+                }
+                if (onPlay != null && done > 0) {
+                    androidx.compose.material3.Button(onClick = onPlay) {
+                        Text(if (converting) "Listen now" else "Listen")
                     }
                 }
             }
@@ -475,6 +481,7 @@ internal fun ConversionsSheet(
     onResume: (String) -> Unit,
     onStop: (String) -> Unit,
     onRemove: (String) -> Unit,
+    onPlay: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -491,6 +498,7 @@ internal fun ConversionsSheet(
                     onResume = { onResume(conversion.id) },
                     onStop = { onStop(conversion.id) },
                     onRemove = { onRemove(conversion.id) },
+                    onPlay = { onPlay(conversion.id) },
                 )
             }
         }
