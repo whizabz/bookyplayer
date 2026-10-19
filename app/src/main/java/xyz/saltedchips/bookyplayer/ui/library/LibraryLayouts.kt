@@ -369,11 +369,14 @@ internal fun ConversionCard(
     onStop: () -> Unit,
     onRemove: () -> Unit,
     onPlay: (() -> Unit)? = null,
+    liveProgress: Float? = null,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val total = book.chapters.size.coerceAtLeast(1)
     val done = book.doneChapters
+    val fraction = (liveProgress ?: (done.toFloat() / total)).coerceIn(0f, 1f)
+    val percent = (fraction * 100).toInt()
     val converting = book.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Converting
     val failed = book.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Failed
     Surface(
@@ -392,15 +395,15 @@ internal fun ConversionCard(
             Text(
                 when {
                     failed -> book.error ?: "Conversion failed"
-                    converting -> "Generating audiobook · $done of $total chapters"
-                    else -> "Stopped · $done of $total chapters"
+                    converting -> "Generating audiobook · $percent% · $done of $total chapters"
+                    else -> "Stopped · $percent% · $done of $total chapters"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 2.dp),
             )
             if (!failed) {
                 LinearWavyProgressIndicator(
-                    progress = { done.toFloat() / total },
+                    progress = { fraction },
                     color = scheme.primary,
                     trackColor = scheme.onSecondaryContainer.copy(alpha = 0.2f),
                     amplitude = { if (converting) 1f else 0f },
@@ -451,7 +454,10 @@ internal fun EpubBadge(modifier: Modifier = Modifier) {
 
 /** The top-bar badge: a spinner while audiobooks are being generated, otherwise their overall progress. */
 @Composable
-internal fun ConversionIndicator(conversions: List<xyz.saltedchips.bookyplayer.library.GeneratedBook>) {
+internal fun ConversionIndicator(
+    conversions: List<xyz.saltedchips.bookyplayer.library.GeneratedBook>,
+    liveProgress: Map<String, Float> = emptyMap(),
+) {
     val converting = conversions.any {
         it.status == xyz.saltedchips.bookyplayer.library.ConversionStatus.Converting
     }
@@ -465,10 +471,11 @@ internal fun ConversionIndicator(conversions: List<xyz.saltedchips.bookyplayer.l
         )
         failed -> Icon(BookyIcons.warning, contentDescription = "Audiobook conversion needs attention")
         else -> {
-            val total = conversions.sumOf { it.chapters.size }.coerceAtLeast(1)
-            val done = conversions.sumOf { it.doneChapters }
+            val average = conversions.map { book ->
+                liveProgress[book.uuid] ?: (book.doneChapters.toFloat() / book.chapters.size.coerceAtLeast(1))
+            }.average().toFloat()
             androidx.compose.material3.CircularProgressIndicator(
-                progress = { done.toFloat() / total },
+                progress = { average },
                 modifier = Modifier.size(24.dp),
                 strokeWidth = 3.dp,
             )
@@ -484,6 +491,7 @@ internal fun ConversionsSheet(
     onStop: (String) -> Unit,
     onRemove: (String) -> Unit,
     onPlay: (String) -> Unit,
+    liveProgress: Map<String, Float>,
     onDismiss: () -> Unit,
 ) {
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -501,6 +509,7 @@ internal fun ConversionsSheet(
                     onStop = { onStop(conversion.id) },
                     onRemove = { onRemove(conversion.id) },
                     onPlay = { onPlay(conversion.id) },
+                    liveProgress = liveProgress[conversion.uuid],
                 )
             }
         }

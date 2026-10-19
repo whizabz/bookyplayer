@@ -77,6 +77,7 @@ class ConvertEpubWorker(
                 GeneratedBookStore.notifyChanged()
                 if (book.doneChapters == 1 && book.chapters.size > 1) notifyFirstChapter(book)
             }
+            ConversionProgress.clear(book.uuid)
             repo.save(book.copy(status = ConversionStatus.Ready, error = null))
             GeneratedBookStore.notifyChanged()
             notifyDone(book)
@@ -95,22 +96,28 @@ class ConvertEpubWorker(
     }
 
     private fun pause(book: GeneratedBook) {
+        ConversionProgress.clear(book.uuid)
         repo.load(book.uuid)?.let { repo.save(it.copy(status = ConversionStatus.Paused)) }
         GeneratedBookStore.notifyChanged()
     }
 
     private fun fail(book: GeneratedBook, message: String): Result {
+        ConversionProgress.clear(book.uuid)
         repo.load(book.uuid)?.let { repo.save(it.copy(status = ConversionStatus.Failed, error = message)) }
         GeneratedBookStore.notifyChanged()
         return Result.failure()
     }
 
     private fun maybeNotify(book: GeneratedBook, chapterIndex: Int, fraction: Float) {
+        val overallNow = (chapterIndex + fraction) / book.chapters.size.coerceAtLeast(1)
+        ConversionProgress.set(book.uuid, overallNow)
         val now = System.currentTimeMillis()
         if (now - lastNotifyAt < 1_000L) return
         lastNotifyAt = now
         val done = chapterIndex + fraction
-        val info = foregroundInfo(book, done / book.chapters.size.coerceAtLeast(1))
+        val overall = done / book.chapters.size.coerceAtLeast(1)
+        ConversionProgress.set(book.uuid, overall)
+        val info = foregroundInfo(book, overall)
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         runCatching { manager.notify(info.notificationId, info.notification) }
     }
@@ -124,6 +131,7 @@ class ConvertEpubWorker(
             .setContentTitle("Generating audiobook")
             .setContentText("${book.title} · $percent%")
             .setProgress(100, percent, false)
+            .setContentIntent(ConversionsRequests.pendingIntent(applicationContext, 1, openSheet = true))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -138,14 +146,7 @@ class ConvertEpubWorker(
 
     private fun notifyFirstChapter(book: GeneratedBook) {
         ensureChannel(applicationContext)
-        val open = android.app.PendingIntent.getActivity(
-            applicationContext,
-            0,
-            android.content.Intent(applicationContext, xyz.saltedchips.bookyplayer.MainActivity::class.java).apply {
-                flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val open = ConversionsRequests.pendingIntent(applicationContext, 2, openSheet = true)
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ms_book_2)
@@ -164,6 +165,7 @@ class ConvertEpubWorker(
             .setSmallIcon(R.drawable.ms_book_2)
             .setContentTitle("Audiobook ready")
             .setContentText(book.title)
+            .setContentIntent(ConversionsRequests.pendingIntent(applicationContext, 3, openSheet = false))
             .setAutoCancel(true)
             .build()
         runCatching { manager.notify(DONE_NOTIFICATION_ID, notification) }

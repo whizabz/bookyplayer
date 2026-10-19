@@ -1,9 +1,7 @@
 package xyz.saltedchips.bookyplayer.tts
 
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -16,7 +14,6 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import xyz.saltedchips.bookyplayer.MainActivity
 import xyz.saltedchips.bookyplayer.R
 
 /** In-process view of the voice download, so the UI can show progress while the job runs. */
@@ -132,6 +129,7 @@ class ModelDownloadWorker(
             .setContentTitle(title)
             .setContentText("$percent%")
             .setProgress(100, percent, false)
+            .setContentIntent(ConversionsRequests.pendingIntent(applicationContext, 5, openSheet = false))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -146,14 +144,7 @@ class ModelDownloadWorker(
 
     private fun notifyResult(title: String, text: String) {
         ConvertEpubWorker.ensureChannel(applicationContext)
-        val open = PendingIntent.getActivity(
-            applicationContext,
-            0,
-            Intent(applicationContext, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val open = ConversionsRequests.pendingIntent(applicationContext, 4, openSheet = false)
         val notification = NotificationCompat.Builder(applicationContext, ConvertEpubWorker.CHANNEL_ID)
             .setSmallIcon(R.drawable.ms_book_2)
             .setContentTitle(title)

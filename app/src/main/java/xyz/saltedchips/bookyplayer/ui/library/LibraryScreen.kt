@@ -119,9 +119,14 @@ fun LibraryScreen(
     onStopConversion: (String) -> Unit = {},
     onRemoveConversion: (String) -> Unit = {},
     onPlayConversion: (String) -> Unit = {},
+    conversionProgress: Map<String, Float> = emptyMap(),
+    openConversionsSignal: Long = 0L,
 ) {
     var sortMenu by remember { mutableStateOf(false) }
     var showConversions by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(openConversionsSignal) {
+        if (openConversionsSignal != 0L) showConversions = true
+    }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selectedIds by rememberSaveable { mutableStateOf(setOf<String>()) }
     var revealedId by remember { mutableStateOf<String?>(null) }
@@ -247,7 +252,7 @@ fun LibraryScreen(
                         Row {
                             if (conversions.isNotEmpty()) {
                                 IconButton(onClick = { showConversions = true }) {
-                                    ConversionIndicator(conversions)
+                                    ConversionIndicator(conversions, conversionProgress)
                                 }
                             }
                             Box {
@@ -526,6 +531,7 @@ fun LibraryScreen(
                 showConversions = false
                 onPlayConversion(id)
             },
+            liveProgress = conversionProgress,
             onDismiss = { showConversions = false },
         )
     } else if (showConversions) {

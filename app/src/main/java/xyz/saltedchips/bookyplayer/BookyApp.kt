@@ -45,6 +45,8 @@ import xyz.saltedchips.bookyplayer.library.PersistableOpenDocumentTree
 import xyz.saltedchips.bookyplayer.player.PlayerViewModel
 import xyz.saltedchips.bookyplayer.settings.AppearanceViewModel
 import xyz.saltedchips.bookyplayer.theme.BookyTheme
+import xyz.saltedchips.bookyplayer.tts.ConversionProgress
+import xyz.saltedchips.bookyplayer.tts.ConversionsRequests
 import xyz.saltedchips.bookyplayer.tts.EpubImportViewModel
 import xyz.saltedchips.bookyplayer.ui.library.EpubImportSheet
 import xyz.saltedchips.bookyplayer.ui.components.PredictiveBackOverlay
@@ -135,6 +137,8 @@ fun BookyApp(
         player.book?.id?.let(libraryViewModel::touchLastPlayed)
     }
     val liveBook = library.books.find { it.id == player.book?.id }
+    val conversionProgress by ConversionProgress.byBook.collectAsStateWithLifecycle()
+    val openConversionsSignal by ConversionsRequests.signal.collectAsStateWithLifecycle()
     LaunchedEffect(liveBook?.id, liveBook?.mediaUris?.size) {
         liveBook?.let(playerViewModel::extendBook)
     }
@@ -200,6 +204,14 @@ fun BookyApp(
                     }
                     nowPlaying = true
                 }
+            }
+        }
+        LaunchedEffect(openConversionsSignal) {
+            if (openConversionsSignal != 0L) {
+                detailBookId = null
+                readingBookId = null
+                showingSettings = false
+                showingPlaceholderCover = false
             }
         }
         LaunchedEffect(detailBookId, library.books) {
@@ -281,6 +293,8 @@ fun BookyApp(
                         onResumeConversion = libraryViewModel::resumeConversion,
                         onStopConversion = libraryViewModel::stopConversion,
                         onRemoveConversion = libraryViewModel::removeConversion,
+                        conversionProgress = conversionProgress,
+                        openConversionsSignal = openConversionsSignal,
                         onPlayConversion = { id ->
                             library.books.find { it.id == id }?.let(playBook)
                         },
