@@ -14,7 +14,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -39,7 +41,6 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
     private var warmJob: Job? = null
     private var previewEngine: KokoroEngine? = null
     private val engineLock = Mutex()
-    private val previewCache = HashMap<Int, FloatArray>()
 
     private val _state = MutableStateFlow(
         EpubImportUiState(
@@ -82,17 +83,25 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
 
     fun deleteModel() {
         releasePreview()
-        previewCache.clear()
+        VoicePreviews.deleteAll(getApplication())
         manager.delete()
         ModelDownloader.idle()
         refresh()
     }
 
-    /** Loads the voice engine ahead of the first preview tap, which is the slow part. */
+    /** Makes any missing voice samples in the background so previews play instantly. */
     fun warmUp() {
-        if (!_state.value.modelInstalled || previewEngine != null || warmJob?.isActive == true) return
+        val app = getApplication<Application>()
+        if (!_state.value.modelInstalled || VoicePreviews.hasAll(app) || warmJob?.isActive == true) return
         warmJob = viewModelScope.launch(Dispatchers.Default) {
-            runCatching { engine() }
+            runCatching {
+                val engine = engine()
+                VoicePreviews.generateMissing(
+                    context = app,
+                    generate = { sid -> generateSample(engine, sid) },
+                    isCancelled = { !isActive },
+                )
+            }
         }
     }
 
@@ -112,7 +121,13 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
         previewEngine ?: KokoroEngine(manager.modelDir, numThreads = 4).also { previewEngine = it }
     }
 
-    /** Says a short sample in the chosen voice so people can compare before converting. */
+    private fun generateSample(engine: KokoroEngine, sid: Int): VoiceSample = runBlocking {
+        engineLock.withLock {
+            VoiceSample(engine.generate(VoicePreviews.TEXT, sid), engine.sampleRate)
+        }
+    }
+
+    /** Plays the saved sample for [sid]; makes and saves it first if it doesn't exist yet. */
     fun previewVoice(sid: Int) {
         if (!_state.value.modelInstalled) return
         previewJob?.cancel()
@@ -120,10 +135,16 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
         previewJob = viewModelScope.launch {
             try {
                 withContext(Dispatchers.Default) {
-                    val engine = engine()
-                    val samples = previewCache[sid] ?: engineLock.withLock {
-                        engine.generate(PREVIEW_TEXT, sid)
-                    }.also { previewCache[sid] = it }
+                    val app = getApplication<Application>()
+                    val sample = VoicePreviews.load(app, sid) ?: run {
+                        val made = engineLock.withLock {
+                            val engine = previewEngine
+                                ?: KokoroEngine(manager.modelDir, numThreads = 4).also { previewEngine = it }
+                            VoiceSample(engine.generate(VoicePreviews.TEXT, sid), engine.sampleRate)
+                        }
+                        VoicePreviews.save(app, sid, made)
+                        made
+                    }
                     val track = AudioTrack.Builder()
                         .setAudioAttributes(
                             AudioAttributes.Builder()
@@ -134,18 +155,18 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
                         .setAudioFormat(
                             AudioFormat.Builder()
                                 .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                                .setSampleRate(engine.sampleRate)
+                                .setSampleRate(sample.sampleRate)
                                 .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                                 .build(),
                         )
                         .setTransferMode(AudioTrack.MODE_STATIC)
-                        .setBufferSizeInBytes(samples.size * 4)
+                        .setBufferSizeInBytes(sample.samples.size * 4)
                         .build()
                     try {
-                        track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+                        track.write(sample.samples, 0, sample.samples.size, AudioTrack.WRITE_BLOCKING)
                         _state.update { it.copy(previewingSid = null) }
                         track.play()
-                        delay(samples.size * 1000L / engine.sampleRate + 200L)
+                        delay(sample.samples.size * 1000L / sample.sampleRate + 200L)
                     } finally {
                         track.release()
                     }
@@ -199,6 +220,5 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
 
     private companion object {
         const val KEY_VOICE = "epub_voice_sid"
-        const val PREVIEW_TEXT = "Hello, this is how I will read your book."
     }
 }

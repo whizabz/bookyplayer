@@ -90,6 +90,7 @@ class ModelDownloadWorker(
                 }
             }
             ModelDownloader.finished()
+            runCatching { prepareSamples(manager) }
             notifyResult("Voice ready", "Open an ePub and tap the sparkle to make your audiobook.")
             Result.success()
         } catch (cancel: CancellationException) {
@@ -103,13 +104,32 @@ class ModelDownloadWorker(
         }
     }
 
-    private fun progressInfo(progress: Float): ForegroundInfo {
+    /** Makes the preview clips for every voice so they play instantly later. */
+    private suspend fun prepareSamples(manager: KokoroModelManager) {
+        if (VoicePreviews.hasAll(applicationContext)) return
+        KokoroEngine(manager.modelDir, numThreads = 4).use { engine ->
+            VoicePreviews.generateMissing(
+                context = applicationContext,
+                generate = { sid ->
+                    VoiceSample(engine.generate(VoicePreviews.TEXT, sid), engine.sampleRate)
+                },
+                isCancelled = { isStopped },
+                onProgress = { done, total ->
+                    val info = progressInfo(done.toFloat() / total, "Preparing voice samples")
+                    val notifications = applicationContext.getSystemService(NotificationManager::class.java)
+                    runCatching { notifications.notify(info.notificationId, info.notification) }
+                },
+            )
+        }
+    }
+
+    private fun progressInfo(progress: Float, title: String = "Downloading audiobook voice"): ForegroundInfo {
         ConvertEpubWorker.ensureChannel(applicationContext)
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val percent = (progress * 100).toInt().coerceIn(0, 100)
         val notification = NotificationCompat.Builder(applicationContext, ConvertEpubWorker.CHANNEL_ID)
             .setSmallIcon(R.drawable.ms_book_2)
-            .setContentTitle("Downloading audiobook voice")
+            .setContentTitle(title)
             .setContentText("$percent%")
             .setProgress(100, percent, false)
             .setOngoing(true)
