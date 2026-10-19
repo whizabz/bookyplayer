@@ -48,7 +48,18 @@ class ConvertEpubWorker(
         GeneratedBookStore.notifyChanged()
         weights = book.chapters.indices.map { repo.chapterTextFile(uuid, it).length().toDouble().coerceAtLeast(1.0) }
         startedAt = System.currentTimeMillis()
-        startFraction = overallFraction(book, null, 0f)
+        val firstPending = book.chapters.indexOfFirst { !it.done }
+        val resumedFraction = if (firstPending >= 0) {
+            val finalFile = repo.chapterAudioFile(uuid, firstPending)
+            ChapterSynthesizer.savedFraction(
+                chapter = EpubChapter(book.chapters[firstPending].title, repo.chapterTextFile(uuid, firstPending).readText()),
+                output = File(finalFile.parentFile, finalFile.name + ".part"),
+                locale = book.language?.let(Locale::forLanguageTag)?.takeIf { it.language.isNotEmpty() } ?: Locale.ENGLISH,
+            )
+        } else {
+            0f
+        }
+        startFraction = overallFraction(book, firstPending.takeIf { it >= 0 }, resumedFraction)
         ConversionProgress.set(uuid, LiveProgress(startFraction))
         setForeground(foregroundInfo(book, LiveProgress(startFraction)))
 
@@ -104,7 +115,6 @@ class ConvertEpubWorker(
     }
 
     private fun pause(book: GeneratedBook) {
-        ConversionProgress.clear(book.uuid)
         repo.load(book.uuid)?.let { repo.save(it.copy(status = ConversionStatus.Paused)) }
         GeneratedBookStore.notifyChanged()
     }

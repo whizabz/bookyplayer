@@ -42,10 +42,7 @@ class KokoroEngine(private val modelDir: File, numThreads: Int = 3) : Closeable 
         isCancelled: () -> Boolean = { false },
     ): FloatArray {
         if (isCancelled()) return FloatArray(0)
-        // The callback runs after each sentence; returning 0 stops generation early.
-        return tts.generateWithCallback(text = text, sid = sid, speed = speed) { _ ->
-            if (isCancelled()) 0 else 1
-        }.samples
+        return tts.generate(text = text, sid = sid, speed = speed).samples
     }
 
     override fun close() {

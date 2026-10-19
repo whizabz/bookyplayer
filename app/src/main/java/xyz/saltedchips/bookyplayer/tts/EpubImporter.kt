@@ -70,7 +70,6 @@ object EpubImporter {
                 repo.save(book.copy(status = ConversionStatus.Paused))
             }
         }
-        ConversionProgress.clear(uuid)
         GeneratedBookStore.notifyChanged()
         cancel(app, bookId)
     }
