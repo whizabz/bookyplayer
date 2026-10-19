@@ -56,14 +56,14 @@ fun SyncPill(
                 if (hazeState != null) {
                     Modifier.hazeEffect(hazeState) {
                         blurRadius = 36.dp
-                        tints = listOf(HazeTint(container.copy(alpha = 0.4f)))
+                        tints = listOf(HazeTint(container.copy(alpha = 0.5f)))
                         noiseFactor = 0.03f
                     }
                 } else {
                     Modifier
                 },
             )
-            .background(container.copy(alpha = if (glass) 0.6f else 0.95f))
+            .background(container.copy(alpha = if (glass) 0.88f else 0.95f))
             .border(
                 BorderStroke(0.5.dp, colors.secondaryContainer.copy(alpha = 0.45f)),
                 CircleShape,
