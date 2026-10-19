@@ -2,6 +2,8 @@ package xyz.saltedchips.bookyplayer.ui.player
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import kotlinx.coroutines.delay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -653,6 +655,12 @@ private fun NowPlayingContent(
     var readAlong by rememberSaveable { mutableStateOf(false) }
     val isGeneratedBook = GeneratedBookRepository.isGenerated(book.id)
     val readAlongVisible = readAlong && isGeneratedBook && collapseProgress < 0.001f && !measurementOnly
+    val readAlongAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (readAlongVisible) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(220),
+        label = "read-along-fade",
+    )
+    val swipePx = with(density) { 72.dp.toPx() }
     val readAlongData = rememberReadAlongData(
         context = androidx.compose.ui.platform.LocalContext.current,
         book = book,
@@ -1091,12 +1099,6 @@ private fun NowPlayingContent(
                             icon = { Icon(BookyIcons.timer, contentDescription = null) },
                         )
                         toolbarItem(
-                            menuLabel = "Chapters",
-                            active = chaptersOpen,
-                            onClick = onOpenChapters,
-                            icon = { Icon(BookyIcons.chapters, contentDescription = null) },
-                        )
-                        toolbarItem(
                             menuLabel = "Chapter repeat",
                             active = player.repeatEnabled,
                             onClick = {
@@ -1114,6 +1116,8 @@ private fun NowPlayingContent(
                             },
                             icon = { Icon(BookyIcons.earSound, contentDescription = null) },
                         )
+                        // Five items fit before the overflow menu: read along (generated books) or
+                        // mark chapter as played takes the last visible slot, and chapters moves into the menu.
                         if (isGeneratedBook) {
                             toolbarItem(
                                 menuLabel = "Read along",
@@ -1124,12 +1128,26 @@ private fun NowPlayingContent(
                                 },
                                 icon = { Icon(BookyIcons.menuBook, contentDescription = null) },
                             )
+                        } else {
+                            toolbarItem(
+                                menuLabel = "Mark chapter as played",
+                                onClick = { pendingMarkChapterConfirm = true },
+                                icon = { Icon(BookyIcons.check, contentDescription = null) },
+                            )
                         }
                         toolbarItem(
-                            menuLabel = "Mark chapter as played",
-                            onClick = { pendingMarkChapterConfirm = true },
-                            icon = { Icon(BookyIcons.check, contentDescription = null) },
+                            menuLabel = "Chapters",
+                            active = chaptersOpen,
+                            onClick = onOpenChapters,
+                            icon = { Icon(BookyIcons.chapters, contentDescription = null) },
                         )
+                        if (isGeneratedBook) {
+                            toolbarItem(
+                                menuLabel = "Mark chapter as played",
+                                onClick = { pendingMarkChapterConfirm = true },
+                                icon = { Icon(BookyIcons.check, contentDescription = null) },
+                            )
+                        }
                         toolbarItem(
                             menuLabel = "Restart chapter",
                             overflowOnly = true,
@@ -1178,7 +1196,25 @@ private fun NowPlayingContent(
             modifier = Modifier
                 .offset { coverOffset.round() }
                 .size(coverSize)
-                .graphicsLayer { alpha = if (readAlongVisible) 0f else 1f }
+                .graphicsLayer {
+                    alpha = if (collapseProgress >= 0.001f) 1f else 1f - readAlongAlpha
+                }
+                .then(
+                    if (isGeneratedBook && collapseProgress < 0.001f && !measurementOnly) {
+                        // Swiping right on the cover turns to the read-along text.
+                        Modifier.pointerInput(readAlong) {
+                            var total = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { total = 0f },
+                                onDragCancel = { total = 0f },
+                                onDragEnd = { if (total > swipePx && !readAlong) readAlong = true },
+                                onHorizontalDrag = { _, amount -> total += amount },
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
+                )
                 .then(
                     if (collapseProgress > 0.55f) {
                         Modifier.clickable(onClick = onExpand)
@@ -1189,7 +1225,7 @@ private fun NowPlayingContent(
             square = false,
             shape = RoundedCornerShape(coverCorner),
         )
-        if (readAlongVisible) {
+        if (readAlongAlpha > 0.01f && collapseProgress < 0.001f && isGeneratedBook && !measurementOnly) {
             val regionHeightPx = (
                 titleExpandedOffset.y - coverExpandedOffset.y - with(density) { 12.dp.toPx() }
                 ).coerceAtLeast(0f)
@@ -1202,7 +1238,18 @@ private fun NowPlayingContent(
                     .size(
                         width = with(density) { coverExpandedSize.toDp() },
                         height = with(density) { regionHeightPx.toDp() },
-                    ),
+                    )
+                    .graphicsLayer { alpha = readAlongAlpha }
+                    .pointerInput(Unit) {
+                        // Swiping left on the text goes back to the cover.
+                        var total = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onDragCancel = { total = 0f },
+                            onDragEnd = { if (total < -swipePx) readAlong = false },
+                            onHorizontalDrag = { _, amount -> total += amount },
+                        )
+                    },
             )
         }
         MorphingNowPlayingTitle(
