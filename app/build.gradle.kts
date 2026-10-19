@@ -21,6 +21,10 @@ android {
         targetSdk = 37
         versionCode = 202610042
         versionName = "2026.10.04"
+        ndk {
+            // The speech engine ships native libraries; arm64 covers current phones.
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {
@@ -64,7 +68,28 @@ kotlin {
     }
 }
 
+val sherpaOnnxVersion = "1.13.8"
+val sherpaOnnxAar = layout.projectDirectory.file("libs/sherpa-onnx-$sherpaOnnxVersion.aar")
+val downloadSherpaOnnx by tasks.registering {
+    description = "Fetches the sherpa-onnx Android AAR (Apache-2.0), which is not on Maven Central."
+    outputs.file(sherpaOnnxAar)
+    doLast {
+        val target = sherpaOnnxAar.asFile
+        if (!target.exists()) {
+            target.parentFile.mkdirs()
+            val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+                "v$sherpaOnnxVersion/sherpa-onnx-$sherpaOnnxVersion.aar"
+            uri(url).toURL().openStream().use { input ->
+                target.outputStream().use { input.copyTo(it) }
+            }
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(downloadSherpaOnnx) }
+
 dependencies {
+    implementation(files(sherpaOnnxAar))
+    implementation(libs.commons.compress)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
