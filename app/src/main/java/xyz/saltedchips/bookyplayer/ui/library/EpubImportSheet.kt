@@ -42,11 +42,15 @@ fun EpubImportSheet(
     state: EpubImportUiState,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
+    onWarmUp: () -> Unit,
     onSelectVoice: (Int) -> Unit,
     onPreviewVoice: (Int) -> Unit,
     onConvert: (Uri) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.LaunchedEffect(state.modelInstalled) {
+        if (state.modelInstalled) onWarmUp()
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -99,11 +103,18 @@ fun EpubImportSheet(
                                 onClick = { onPreviewVoice(voice.sid) },
                                 enabled = state.previewingSid == null,
                             ) {
-                                Icon(
-                                    BookyIcons.play,
-                                    contentDescription = "Preview ${voice.label}",
-                                    modifier = Modifier.size(24.dp),
-                                )
+                                if (state.previewingSid == voice.sid) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                } else {
+                                    Icon(
+                                        BookyIcons.play,
+                                        contentDescription = "Preview ${voice.label}",
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -148,7 +159,8 @@ private fun VoiceModelStep(
     Text("Download the voice first", style = MaterialTheme.typography.titleSmall)
     Text(
         "A one-time download of about 350 MB (Kokoro, Apache-2.0). Wi-Fi is recommended. " +
-            "You can delete it later in Settings.",
+            "It runs in the background, so you can close this and keep reading. " +
+            "We'll notify you when it's ready.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
@@ -156,7 +168,7 @@ private fun VoiceModelStep(
     val progress = state.downloadProgress
     if (progress == null) {
         Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
-            Text(if (state.downloadError != null) "Try again" else "Download voice")
+            Text(if (state.downloadError != null) "Try again" else "Download in background")
         }
         state.downloadError?.let {
             Text(

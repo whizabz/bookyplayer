@@ -149,11 +149,11 @@ class ConvertEpubWorker(
 
     companion object {
         const val KEY_UUID = "uuid"
-        private const val CHANNEL_ID = "epub_conversion"
+        internal const val CHANNEL_ID = "epub_conversion"
         private const val NOTIFICATION_ID = 4101
         private const val DONE_NOTIFICATION_ID = 4102
 
-        private fun ensureChannel(context: Context) {
+        internal fun ensureChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java)
             if (manager.getNotificationChannel(CHANNEL_ID) == null) {
                 manager.createNotificationChannel(

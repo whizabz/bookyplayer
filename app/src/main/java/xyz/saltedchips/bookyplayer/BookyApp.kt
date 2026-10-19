@@ -175,9 +175,16 @@ fun BookyApp(
         val hazeState = rememberHazeState()
         val miniPlayerClearance = if (player.book != null) 104.dp else 0.dp
         var cachedDetailBook by remember { mutableStateOf<Audiobook?>(null) }
+        val openReader: (String) -> Unit = { id ->
+            if (player.book != null) {
+                nowPlaying = false
+                playerViewModel.closeBook()
+            }
+            readingBookId = id
+        }
         val playBook: (Audiobook) -> Unit = { book ->
             if (book.kind == BookKind.Epub) {
-                readingBookId = book.id
+                openReader(book.id)
             } else if (player.book?.id == book.id && player.isPlaying) {
                 playerViewModel.togglePlay()
             } else {
@@ -262,7 +269,7 @@ fun BookyApp(
                         },
                         onChooseFolder = { pickFolder.launch(null) },
                         onOpenBook = { opened ->
-                            if (opened.kind == BookKind.Epub) readingBookId = opened.id else detailBookId = opened.id
+                            if (opened.kind == BookKind.Epub) openReader(opened.id) else detailBookId = opened.id
                         },
                         onPlayBook = playBook,
                         onOpenSettings = { showingSettings = true },
@@ -504,10 +511,12 @@ fun BookyApp(
                 state = importState,
                 onDownload = importViewModel::startDownload,
                 onCancelDownload = importViewModel::cancelDownload,
+                onWarmUp = importViewModel::warmUp,
                 onSelectVoice = importViewModel::setVoice,
                 onPreviewVoice = importViewModel::previewVoice,
                 onConvert = { uri ->
                     importViewModel.import(uri) {
+                        importViewModel.releasePreview()
                         pendingEpubUri = null
                         Toast.makeText(
                             context,
@@ -517,7 +526,7 @@ fun BookyApp(
                     }
                 },
                 onDismiss = {
-                    importViewModel.cancelDownload()
+                    importViewModel.releasePreview()
                     pendingEpubUri = null
                 },
             )

@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import xyz.saltedchips.bookyplayer.epub.EpubDrmException
 import xyz.saltedchips.bookyplayer.epub.EpubParseException
@@ -33,9 +35,11 @@ data class EpubImportUiState(
 class EpubImportViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("booky_prefs", 0)
     private val manager = KokoroModelManager(application)
-    private var downloadJob: Job? = null
     private var previewJob: Job? = null
+    private var warmJob: Job? = null
     private var previewEngine: KokoroEngine? = null
+    private val engineLock = Mutex()
+    private val previewCache = HashMap<Int, FloatArray>()
 
     private val _state = MutableStateFlow(
         EpubImportUiState(
@@ -45,6 +49,15 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
         ),
     )
     val state: StateFlow<EpubImportUiState> = _state
+
+    init {
+        viewModelScope.launch {
+            ModelDownloader.status.collect { status ->
+                _state.update { it.copy(downloadProgress = status.progress, downloadError = status.error) }
+                if (status.finishedAt != 0L) refresh()
+            }
+        }
+    }
 
     fun refresh() {
         val installed = manager.isInstalled()
@@ -58,46 +71,45 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
         _state.update { it.copy(voiceSid = sid) }
     }
 
+    /** Starts the download in the background; it keeps going if the sheet is closed. */
     fun startDownload() {
-        if (downloadJob?.isActive == true) return
-        _state.update { it.copy(downloadProgress = 0f, downloadError = null) }
-        downloadJob = viewModelScope.launch {
-            try {
-                var last = 0f
-                manager.download { progress ->
-                    if (progress - last >= 0.005f || progress >= 1f) {
-                        last = progress
-                        _state.update { it.copy(downloadProgress = progress) }
-                    }
-                }
-                _state.update {
-                    it.copy(
-                        modelInstalled = true,
-                        modelBytes = manager.installedBytes(),
-                        downloadProgress = null,
-                    )
-                }
-            } catch (cancel: CancellationException) {
-                _state.update { it.copy(downloadProgress = null) }
-                throw cancel
-            } catch (t: Throwable) {
-                _state.update {
-                    it.copy(downloadProgress = null, downloadError = t.message ?: "Download failed")
-                }
+        ModelDownloader.start(getApplication())
+    }
+
+    fun cancelDownload() {
+        ModelDownloader.cancel(getApplication())
+    }
+
+    fun deleteModel() {
+        releasePreview()
+        previewCache.clear()
+        manager.delete()
+        ModelDownloader.idle()
+        refresh()
+    }
+
+    /** Loads the voice engine ahead of the first preview tap, which is the slow part. */
+    fun warmUp() {
+        if (!_state.value.modelInstalled || previewEngine != null || warmJob?.isActive == true) return
+        warmJob = viewModelScope.launch(Dispatchers.Default) {
+            runCatching { engine() }
+        }
+    }
+
+    /** Frees the engine's memory once the sheet closes or conversion starts. */
+    fun releasePreview() {
+        previewJob?.cancel()
+        warmJob?.cancel()
+        viewModelScope.launch(Dispatchers.Default) {
+            engineLock.withLock {
+                previewEngine?.close()
+                previewEngine = null
             }
         }
     }
 
-    fun cancelDownload() {
-        downloadJob?.cancel()
-    }
-
-    fun deleteModel() {
-        previewJob?.cancel()
-        previewEngine?.close()
-        previewEngine = null
-        manager.delete()
-        refresh()
+    private suspend fun engine(): KokoroEngine = engineLock.withLock {
+        previewEngine ?: KokoroEngine(manager.modelDir, numThreads = 4).also { previewEngine = it }
     }
 
     /** Says a short sample in the chosen voice so people can compare before converting. */
@@ -108,11 +120,10 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
         previewJob = viewModelScope.launch {
             try {
                 withContext(Dispatchers.Default) {
-                    val engine = previewEngine ?: KokoroEngine(manager.modelDir).also { previewEngine = it }
-                    val samples = engine.generate(
-                        "Hello. This is how I will read your book.",
-                        sid,
-                    )
+                    val engine = engine()
+                    val samples = previewCache[sid] ?: engineLock.withLock {
+                        engine.generate(PREVIEW_TEXT, sid)
+                    }.also { previewCache[sid] = it }
                     val track = AudioTrack.Builder()
                         .setAudioAttributes(
                             AudioAttributes.Builder()
@@ -132,6 +143,7 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
                         .build()
                     try {
                         track.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+                        _state.update { it.copy(previewingSid = null) }
                         track.play()
                         delay(samples.size * 1000L / engine.sampleRate + 200L)
                     } finally {
@@ -179,6 +191,7 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() {
         previewJob?.cancel()
+        warmJob?.cancel()
         previewEngine?.close()
         previewEngine = null
         super.onCleared()
@@ -186,5 +199,6 @@ class EpubImportViewModel(application: Application) : AndroidViewModel(applicati
 
     private companion object {
         const val KEY_VOICE = "epub_voice_sid"
+        const val PREVIEW_TEXT = "Hello, this is how I will read your book."
     }
 }
