@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -15,6 +16,8 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import xyz.saltedchips.bookyplayer.R
 import xyz.saltedchips.bookyplayer.epub.EpubChapter
@@ -38,6 +41,12 @@ class ConvertEpubWorker(
 
     override suspend fun doWork(): Result {
         val uuid = inputData.getString(KEY_UUID) ?: return Result.failure()
+        // A paused job takes a moment to wind down. Wait for it so two jobs never write the same
+        // chapter checkpoint at once.
+        return locks.getOrPut(uuid) { Mutex() }.withLock { convert(uuid) }
+    }
+
+    private suspend fun convert(uuid: String): Result {
         var book = repo.load(uuid) ?: return Result.failure()
         val manager = KokoroModelManager(applicationContext)
         if (!manager.isInstalled()) {
@@ -60,6 +69,7 @@ class ConvertEpubWorker(
             0f
         }
         startFraction = overallFraction(book, firstPending.takeIf { it >= 0 }, resumedFraction)
+        Log.d(TAG, "start: pending=$firstPending done=${book.doneChapters}/${book.chapters.size} saved=$resumedFraction start=$startFraction")
         ConversionProgress.set(uuid, LiveProgress(startFraction))
         setForeground(foregroundInfo(book, LiveProgress(startFraction)))
 
@@ -201,6 +211,8 @@ class ConvertEpubWorker(
 
     companion object {
         const val KEY_UUID = "uuid"
+        private const val TAG = "ConvertEpub"
+        private val locks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
         internal const val CHANNEL_ID = "epub_conversion"
         private const val NOTIFICATION_ID = 4101
         private const val DONE_NOTIFICATION_ID = 4102
