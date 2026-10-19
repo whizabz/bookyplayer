@@ -171,7 +171,7 @@ fun EpubReaderScreen(
                             enabled = !state.loading && state.error == null,
                         ) {
                             Icon(
-                                BookyIcons.audioCapture,
+                                if (onRegenerate != null) BookyIcons.autoReadPlay else BookyIcons.audioCapture,
                                 contentDescription = if (onRegenerate != null) "Audiobook options" else "Generate audiobook",
                             )
                         }

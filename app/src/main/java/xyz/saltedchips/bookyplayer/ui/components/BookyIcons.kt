@@ -31,6 +31,7 @@ object BookyIcons {
     val speed: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_speed)
     val repeat: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_repeat)
     val menuBook: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_menu_book)
+    val autoReadPlay: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_auto_read_play)
     val audioCapture: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_audio_capture)
     val sync: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_sync)
     val add: ImageVector @Composable get() = ImageVector.vectorResource(R.drawable.ms_add)
