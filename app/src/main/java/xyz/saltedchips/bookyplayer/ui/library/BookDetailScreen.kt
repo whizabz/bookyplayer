@@ -202,7 +202,7 @@ fun BookDetailScreen(
                                 onClick = { pendingRegenerate = false to selectedIndices },
                                 enabled = selectedIndices.isNotEmpty(),
                             ) {
-                                Icon(BookyIcons.sparkle, contentDescription = "Regenerate audio")
+                                Icon(BookyIcons.audioCapture, contentDescription = "Regenerate audio")
                             }
                         }
                         IconButton(
@@ -256,7 +256,7 @@ fun BookDetailScreen(
                             if (onRegenerate != null) {
                                 DropdownMenuItem(
                                     text = { Text("Regenerate audio") },
-                                    leadingIcon = { Icon(BookyIcons.sparkle, contentDescription = null) },
+                                    leadingIcon = { Icon(BookyIcons.audioCapture, contentDescription = null) },
                                     onClick = {
                                         menuOpen = false
                                         pendingRegenerate = true to emptySet()

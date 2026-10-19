@@ -88,7 +88,7 @@ class ModelDownloadWorker(
             }
             ModelDownloader.finished()
             runCatching { prepareSamples(manager) }
-            notifyResult("Voice ready", "Open an ePub and tap the sparkle to make your audiobook.")
+            notifyResult("Voice ready", "Open an ePub and tap the audio button to generate your audiobook.")
             Result.success()
         } catch (cancel: CancellationException) {
             ModelDownloader.idle()
