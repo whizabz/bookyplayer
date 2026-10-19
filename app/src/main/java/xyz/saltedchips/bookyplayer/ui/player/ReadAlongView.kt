@@ -3,6 +3,7 @@ package xyz.saltedchips.bookyplayer.ui.player
 import android.content.Context
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.layout.onSizeChanged
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
@@ -130,8 +131,16 @@ fun ReadAlongView(
     val listState = rememberLazyListState()
     var following by remember { mutableStateOf(true) }
     var programmatic by remember { mutableStateOf(false) }
-    val activeVisible by remember(active) {
-        derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.index == active } }
+    var viewportHeightPx by remember { mutableStateOf(0) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // Where the spoken line rests while following (the list's top padding), and how far off is too far.
+    val restPx = viewportHeightPx * 0.3f
+    val tolerancePx = with(density) { 48.dp.toPx() }
+    val activeInPlace by remember(active, restPx) {
+        derivedStateOf {
+            val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == active }
+            item != null && abs(item.offset - restPx) <= tolerancePx
+        }
     }
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
@@ -149,7 +158,7 @@ fun ReadAlongView(
             }
         }
     }
-    Box(modifier = modifier) {
+    Box(modifier = modifier.onSizeChanged { viewportHeightPx = it.height }) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
@@ -203,15 +212,17 @@ fun ReadAlongView(
                 }
             }
         }
-        if (!following && !activeVisible && data.lines.isNotEmpty()) {
-            SmallFloatingActionButton(
+        // Shown as soon as the spoken line is out of view or has drifted from its place, in
+        // whichever direction you scrolled.
+        if (!following && !activeInPlace && data.lines.isNotEmpty()) {
+            androidx.compose.material3.SmallExtendedFloatingActionButton(
                 onClick = { following = true },
+                icon = { Icon(BookyIcons.sync, contentDescription = null) },
+                text = { Text("Sync to audio") },
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
+                    .align(Alignment.BottomCenter)
                     .padding(12.dp),
-            ) {
-                Icon(BookyIcons.sync, contentDescription = "Sync to audio")
-            }
+            )
         }
     }
 }
