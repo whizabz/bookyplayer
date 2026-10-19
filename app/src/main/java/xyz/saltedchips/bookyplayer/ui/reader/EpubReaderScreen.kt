@@ -83,6 +83,8 @@ fun EpubReaderScreen(
     /** For a book that already has audio: regenerate every chapter (null) or one chapter. */
     onRegenerate: ((chapter: Int?) -> Unit)? = null,
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    /** An audiobook for this ePub is already being generated, so the tip would be misleading. */
+    audioInProgress: Boolean = false,
     sync: ReaderSync? = null,
     hazeState: dev.chrisbanes.haze.HazeState? = null,
 ) {
@@ -217,10 +219,8 @@ fun EpubReaderScreen(
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-            val showTip = state.audioTip && onRegenerate == null && !state.loading && state.error == null
-            LaunchedEffect(showTip) {
-                if (showTip) viewModel.markAudioTipSeen()
-            }
+            val showTip = state.audioTip && onRegenerate == null && !audioInProgress &&
+                !state.loading && state.error == null
             when {
                 state.loading -> CircularProgressIndicator()
                 state.error != null -> Column(
@@ -404,7 +404,7 @@ private fun AudioTipCard(onGenerate: () -> Unit, onDismiss: () -> Unit, modifier
                     .padding(top = 12.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
-                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Not now") }
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Dismiss") }
                 Button(onClick = onGenerate) { Text("Generate audiobook") }
             }
         }

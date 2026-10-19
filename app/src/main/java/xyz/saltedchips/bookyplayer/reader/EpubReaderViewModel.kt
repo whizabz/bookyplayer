@@ -25,8 +25,8 @@ data class ReaderUiState(
     val scrollIndex: Int = 0,
     val scrollOffset: Int = 0,
     val textScale: Float = 1f,
-    /** True on the first ePub opened, until it is dismissed: shows the audiobook tip. */
-    val audioTip: Boolean = false,
+    /** True each time an ePub is opened, until it is dismissed: shows the audiobook tip. */
+    val audioTip: Boolean = true,
 )
 
 /** Opens one ePub for reading and remembers the chapter and scroll position. */
@@ -40,6 +40,8 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
     val state: StateFlow<ReaderUiState> = _state
 
     fun load(id: String) {
+        // The tip comes back every time a book is opened.
+        _state.update { it.copy(audioTip = true) }
         if (bookId == id && !_state.value.loading && _state.value.error == null) return
         bookId = id
         _state.update { it.copy(loading = true, error = null) }
@@ -69,7 +71,6 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
                         chapterIndex = chapter,
                         scrollIndex = if (chapter == saved.first) saved.second else 0,
                         scrollOffset = if (chapter == saved.first) saved.third else 0,
-                        audioTip = it.audioTip || !prefs.getBoolean(KEY_TIP_SEEN, false),
                     )
                 }
             }.onFailure { t ->
@@ -97,13 +98,7 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
         prefs.edit().putString(positionKey(id), "$chapter,$scrollIndex,$scrollOffset").apply()
     }
 
-    /** Remembers that the tip has been shown, so later ePubs open without it. */
-    fun markAudioTipSeen() {
-        prefs.edit().putBoolean(KEY_TIP_SEEN, true).apply()
-    }
-
     fun dismissAudioTip() {
-        markAudioTipSeen()
         _state.update { it.copy(audioTip = false) }
     }
 
@@ -130,7 +125,6 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     private companion object {
         const val KEY_TEXT_SCALE = "reader_text_scale"
-        const val KEY_TIP_SEEN = "epub_audio_tip_seen"
         const val MIN_SCALE = 0.8f
         const val MAX_SCALE = 1.8f
     }
