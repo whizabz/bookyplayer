@@ -180,6 +180,34 @@ fun SettingsScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(bottom = 16.dp)) {
                     ListItem(
+                        headlineContent = { Text("Library layout") },
+                        supportingContent = {
+                            Text("Choose how your books are laid out")
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    LibraryLayoutPicker(
+                        selected = libraryLayout,
+                        onSelect = onLibraryLayoutChange,
+                    )
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                ListItem(
+                    headlineContent = { Text("Placeholder covers") },
+                    supportingContent = {
+                        Text("Look for books without artwork")
+                    },
+                    trailingContent = { Icon(BookyIcons.chevronRight, contentDescription = null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable(onClick = onOpenPlaceholderCover),
+                )
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(bottom = 16.dp)) {
+                    ListItem(
                         headlineContent = { Text("Appearance") },
                         supportingContent = {
                             Text("System follows the device theme")
@@ -293,65 +321,6 @@ fun SettingsScreen(
                 }
             }
 
-            if (voiceModelBytes > 0L) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "Audiobook speech model",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            androidx.compose.material3.TextButton(onClick = onDeleteVoiceModel) {
-                                Text("Delete")
-                            }
-                        }
-                        Text(
-                            "Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(end = 8.dp),
-                        )
-                        Text(
-                            "This model generates audiobooks from ePubs and includes all the voices " +
-                                "you can choose from. Deleting it keeps the audiobooks you've already " +
-                                "generated, but you'll need to download it again to generate new ones.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 12.dp, end = 8.dp),
-                        )
-                    }
-                }
-            }
-
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(bottom = 16.dp)) {
-                    ListItem(
-                        headlineContent = { Text("Library layout") },
-                        supportingContent = {
-                            Text("Choose how your books are laid out")
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
-                    LibraryLayoutPicker(
-                        selected = libraryLayout,
-                        onSelect = onLibraryLayoutChange,
-                    )
-                }
-            }
-
-            Card(modifier = Modifier.fillMaxWidth()) {
-                ListItem(
-                    headlineContent = { Text("Placeholder covers") },
-                    supportingContent = {
-                        Text("Look for books without artwork")
-                    },
-                    trailingContent = { Icon(BookyIcons.chevronRight, contentDescription = null) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier.clickable(onClick = onOpenPlaceholderCover),
-                )
-            }
-
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(bottom = 16.dp)) {
                     ListItem(
@@ -418,6 +387,37 @@ fun SettingsScreen(
                                 Text("${seconds}s", maxLines = 1)
                             }
                         }
+                    }
+                }
+            }
+
+            if (voiceModelBytes > 0L) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Audiobook speech model",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            androidx.compose.material3.TextButton(onClick = onDeleteVoiceModel) {
+                                Text("Delete")
+                            }
+                        }
+                        Text(
+                            "Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                        Text(
+                            "This model generates audiobooks from ePubs and includes all the voices " +
+                                "you can choose from. Deleting it does not delete the audiobooks we've already " +
+                                "generated, but you'll need to download it again to generate new ones.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 12.dp, end = 8.dp),
+                        )
                     }
                 }
             }
