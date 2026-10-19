@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.data.BookKind
+import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 import xyz.saltedchips.bookyplayer.library.LibraryViewModel
 import xyz.saltedchips.bookyplayer.library.PersistableOpenDocumentTree
 import xyz.saltedchips.bookyplayer.player.PlayerViewModel
@@ -53,7 +54,6 @@ import xyz.saltedchips.bookyplayer.ui.components.PredictiveBackOverlay
 import xyz.saltedchips.bookyplayer.ui.library.BookDetailScreen
 import xyz.saltedchips.bookyplayer.ui.library.LibraryScreen
 import xyz.saltedchips.bookyplayer.ui.reader.EpubReaderScreen
-import xyz.saltedchips.bookyplayer.ui.reader.ReaderAudio
 import xyz.saltedchips.bookyplayer.ui.player.NowPlayingScreen
 import xyz.saltedchips.bookyplayer.ui.settings.PlaceholderCoverScreen
 import xyz.saltedchips.bookyplayer.ui.settings.SettingsScreen
@@ -332,30 +332,14 @@ fun BookyApp(
                     ) {
                         val book = cachedReadingBook
                         if (book != null) {
-                            val readerAudio = book.linkedAudioId
-                                ?.let { id -> library.playQueue.find { it.id == id } }
-                            val audioLoaded = readerAudio != null && player.book?.id == readerAudio.id
                             EpubReaderScreen(
                                 book = book,
-                                audio = readerAudio?.let { audioBook ->
-                                    ReaderAudio(
-                                        audioBookId = audioBook.id,
-                                        chapterDurationsMs = audioBook.chapterDurationsMs,
-                                        loaded = audioLoaded,
-                                        chapterIndex = player.currentChapterIndex,
-                                        positionMs = player.chapterPositionMs,
-                                        isPlaying = audioLoaded && player.isPlaying,
-                                        onPlay = { chapter ->
-                                            if (audioLoaded) {
-                                                playerViewModel.togglePlay()
-                                            } else {
-                                                withPlaybackReady {
-                                                    playerViewModel.playFromChapter(audioBook, chapter)
-                                                }
-                                            }
-                                        },
-                                    )
+                                onRegenerate = book.linkedAudioId?.let { audioId ->
+                                    { chapter: Int? ->
+                                        libraryViewModel.regenerate(audioId, chapter?.let { setOf(it) })
+                                    }
                                 },
+                                bottomPadding = miniPlayerClearance,
                                 onBack = { readingBookId = null },
                                 onMakeAudiobook = {
                                     importViewModel.clearImportError()
@@ -429,6 +413,11 @@ fun BookyApp(
                                     libraryViewModel.setListened(book.id, 0L)
                                 },
                                 onBack = { detailBookId = null },
+                                onRegenerate = if (GeneratedBookRepository.isGenerated(book.id)) {
+                                    { chapters -> libraryViewModel.regenerate(book.id, chapters) }
+                                } else {
+                                    null
+                                },
                                 bottomContentPadding = 24.dp + miniPlayerClearance,
                                 selectionBackEnabled = !detailsCovered,
                                 modifier = screenModifier,
@@ -439,7 +428,7 @@ fun BookyApp(
             }
 
             val book = player.book
-            if (book != null && readingBookId == null) {
+            if (book != null) {
                 NowPlayingScreen(
                     player = player,
                     expanded = nowPlaying && !showingSettings && !showingPlaceholderCover,

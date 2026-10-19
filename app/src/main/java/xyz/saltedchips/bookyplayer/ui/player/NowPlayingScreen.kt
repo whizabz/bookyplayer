@@ -151,6 +151,7 @@ import xyz.saltedchips.bookyplayer.ui.components.showBulkChapterSnackbar
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
 
 private enum class PlayerAnchor { Chapters, Expanded, Mini, Hidden }
 
@@ -649,6 +650,15 @@ private fun NowPlayingContent(
     var controlHint by remember { mutableStateOf<String?>(null) }
     var lastControlHint by remember { mutableStateOf("") }
     var controlHintToken by remember { mutableStateOf(0) }
+    var readAlong by rememberSaveable { mutableStateOf(false) }
+    val isGeneratedBook = GeneratedBookRepository.isGenerated(book.id)
+    val readAlongVisible = readAlong && isGeneratedBook && collapseProgress < 0.001f && !measurementOnly
+    val readAlongData = rememberReadAlongData(
+        context = androidx.compose.ui.platform.LocalContext.current,
+        book = book,
+        chapterIndex = player.currentChapterIndex,
+        enabled = readAlong && isGeneratedBook && !measurementOnly,
+    )
     fun showHint(text: String) {
         controlHint = text
         controlHintToken++
@@ -1104,6 +1114,17 @@ private fun NowPlayingContent(
                             },
                             icon = { Icon(BookyIcons.earSound, contentDescription = null) },
                         )
+                        if (isGeneratedBook) {
+                            toolbarItem(
+                                menuLabel = "Read along",
+                                active = readAlong,
+                                onClick = {
+                                    showHint(if (readAlong) "Read along off" else "Read along on")
+                                    readAlong = !readAlong
+                                },
+                                icon = { Icon(BookyIcons.menuBook, contentDescription = null) },
+                            )
+                        }
                         toolbarItem(
                             menuLabel = "Mark chapter as played",
                             onClick = { pendingMarkChapterConfirm = true },
@@ -1157,6 +1178,7 @@ private fun NowPlayingContent(
             modifier = Modifier
                 .offset { coverOffset.round() }
                 .size(coverSize)
+                .graphicsLayer { alpha = if (readAlongVisible) 0f else 1f }
                 .then(
                     if (collapseProgress > 0.55f) {
                         Modifier.clickable(onClick = onExpand)
@@ -1167,6 +1189,22 @@ private fun NowPlayingContent(
             square = false,
             shape = RoundedCornerShape(coverCorner),
         )
+        if (readAlongVisible) {
+            val regionHeightPx = (
+                titleExpandedOffset.y - coverExpandedOffset.y - with(density) { 12.dp.toPx() }
+                ).coerceAtLeast(0f)
+            ReadAlongView(
+                data = readAlongData,
+                positionMs = player.chapterPositionMs,
+                onSeekTo = onSeek,
+                modifier = Modifier
+                    .offset { coverExpandedOffset.round() }
+                    .size(
+                        width = with(density) { coverExpandedSize.toDp() },
+                        height = with(density) { regionHeightPx.toDp() },
+                    ),
+            )
+        }
         MorphingNowPlayingTitle(
             title = book.title,
             subtitle = book.currentChapterTitle,

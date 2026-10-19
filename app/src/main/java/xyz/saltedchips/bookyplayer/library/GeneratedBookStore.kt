@@ -12,7 +12,13 @@ import xyz.saltedchips.bookyplayer.epub.EpubBook
 
 enum class ConversionStatus { Converting, Paused, Ready, Failed }
 
-data class GeneratedChapter(val title: String, val done: Boolean = false, val durationMs: Long = 0L)
+/** [stale] means the finished audio is being regenerated; the old audio stays playable until replaced. */
+data class GeneratedChapter(
+    val title: String,
+    val done: Boolean = false,
+    val durationMs: Long = 0L,
+    val stale: Boolean = false,
+)
 
 /** An ePub being (or already) turned into audio. Files live in `generated_books/<uuid>/`. */
 data class GeneratedBook(
@@ -29,10 +35,12 @@ data class GeneratedBook(
     val sourceId: String? = null,
 ) {
     val id: String get() = GeneratedBookRepository.ID_PREFIX + uuid
-    val doneChapters: Int get() = chapters.count { it.done }
+    val doneChapters: Int get() = chapters.count { it.done && !it.stale }
 
     fun withChapterDone(index: Int, durationMs: Long) = copy(
-        chapters = chapters.mapIndexed { i, c -> if (i == index) c.copy(done = true, durationMs = durationMs) else c },
+        chapters = chapters.mapIndexed { i, c ->
+            if (i == index) c.copy(done = true, stale = false, durationMs = durationMs) else c
+        },
     )
 }
 
@@ -93,7 +101,8 @@ class GeneratedBookRepository(private val root: File) {
                 "chapters",
                 JSONArray(
                     book.chapters.map {
-                        JSONObject().put("title", it.title).put("done", it.done).put("durationMs", it.durationMs)
+                        JSONObject().put("title", it.title).put("done", it.done)
+                            .put("durationMs", it.durationMs).put("stale", it.stale)
                     },
                 ),
             )
@@ -117,7 +126,12 @@ class GeneratedBookRepository(private val root: File) {
             createdAtMs = json.optLong("createdAtMs"),
             chapters = List(chapters.length()) { i ->
                 val c = chapters.getJSONObject(i)
-                GeneratedChapter(c.getString("title"), c.optBoolean("done"), c.optLong("durationMs"))
+                GeneratedChapter(
+                    c.getString("title"),
+                    c.optBoolean("done"),
+                    c.optLong("durationMs"),
+                    c.optBoolean("stale"),
+                )
             },
             status = ConversionStatus.entries.firstOrNull { it.name == json.optString("status") }
                 ?: ConversionStatus.Failed,

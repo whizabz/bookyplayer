@@ -87,4 +87,21 @@ class GeneratedBookRepositoryTest {
         assertEquals("abc", GeneratedBookRepository.uuidOf("gen:abc"))
         assertEquals(false, GeneratedBookRepository.isGenerated("content://x"))
     }
+
+    @Test
+    fun staleChaptersStayPlayableButCountAsPending() {
+        val repo = repo()
+        var book = repo.create(epub, 3, 1f)
+        book = book.withChapterDone(0, 60_000L).withChapterDone(1, 45_000L)
+        book = book.copy(
+            chapters = book.chapters.mapIndexed { i, c -> if (i == 0) c.copy(stale = true) else c },
+        )
+        repo.save(book)
+        val loaded = repo.load(book.uuid)!!
+        assertEquals(1, loaded.doneChapters)
+        assertEquals(2, repo.toAudiobook(loaded)!!.mediaUris.size)
+        val replaced = loaded.withChapterDone(0, 70_000L)
+        assertEquals(false, replaced.chapters[0].stale)
+        assertEquals(2, replaced.doneChapters)
+    }
 }

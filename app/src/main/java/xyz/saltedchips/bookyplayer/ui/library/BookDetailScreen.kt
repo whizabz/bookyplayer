@@ -78,6 +78,7 @@ fun BookDetailScreen(
     onMarkPlayed: () -> Unit,
     onResetProgress: () -> Unit,
     onBack: () -> Unit,
+    onRegenerate: ((Set<Int>?) -> Unit)? = null,
     bottomContentPadding: Dp = 16.dp,
     modifier: Modifier = Modifier,
     selectionBackEnabled: Boolean = true,
@@ -98,6 +99,8 @@ fun BookDetailScreen(
     var editing by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
     var confirmingReset by remember { mutableStateOf(false) }
+    // First is true for the whole book; the set holds chapters when regenerating a selection.
+    var pendingRegenerate by remember { mutableStateOf<Pair<Boolean, Set<Int>>?>(null) }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selectedIndices by rememberSaveable { mutableStateOf(setOf<Int>()) }
     var revealedIndex by remember { mutableStateOf<Int?>(null) }
@@ -192,6 +195,14 @@ fun BookDetailScreen(
                 },
                 actions = {
                     if (selecting) {
+                        if (onRegenerate != null) {
+                            IconButton(
+                                onClick = { pendingRegenerate = false to selectedIndices },
+                                enabled = selectedIndices.isNotEmpty(),
+                            ) {
+                                Icon(BookyIcons.sparkle, contentDescription = "Regenerate audio")
+                            }
+                        }
                         IconButton(
                             onClick = {
                                 val indices = selectedIndices
@@ -240,6 +251,16 @@ fun BookDetailScreen(
                                     onMarkPlayed()
                                 },
                             )
+                            if (onRegenerate != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Regenerate audio") },
+                                    leadingIcon = { Icon(BookyIcons.sparkle, contentDescription = null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        pendingRegenerate = true to emptySet()
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Reset") },
                                 leadingIcon = { Icon(BookyIcons.restartAlt, contentDescription = null) },
@@ -424,6 +445,36 @@ fun BookDetailScreen(
                 onUpdateMetadata(title, author, narrator, chapters, cover)
             },
             onDismiss = { editing = false },
+        )
+    }
+    pendingRegenerate?.let { (whole, chapters) ->
+        AlertDialog(
+            onDismissRequest = { pendingRegenerate = null },
+            title = { Text(if (whole) "Regenerate audiobook?" else "Regenerate chapters?") },
+            text = {
+                Text(
+                    if (whole) {
+                        "Every chapter is spoken again with the same voice. You can keep listening " +
+                            "while it runs, and each chapter switches over when its new audio is ready."
+                    } else {
+                        "${chapters.size} selected chapter(s) are spoken again with the same voice. " +
+                            "The current audio plays until the new audio is ready."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRegenerate = null
+                        onRegenerate?.invoke(if (whole) null else chapters)
+                        selecting = false
+                        selectedIndices = emptySet()
+                    },
+                ) { Text("Regenerate") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRegenerate = null }) { Text("Cancel") }
+            },
         )
     }
     if (confirmingReset) {

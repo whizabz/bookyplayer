@@ -57,7 +57,7 @@ class ConvertEpubWorker(
         GeneratedBookStore.notifyChanged()
         weights = book.chapters.indices.map { repo.chapterTextFile(uuid, it).length().toDouble().coerceAtLeast(1.0) }
         startedAt = System.currentTimeMillis()
-        val firstPending = book.chapters.indexOfFirst { !it.done }
+        val firstPending = book.chapters.indexOfFirst { !it.done || it.stale }
         val resumedFraction = if (firstPending >= 0) {
             val finalFile = repo.chapterAudioFile(uuid, firstPending)
             ChapterSynthesizer.savedFraction(
@@ -83,7 +83,7 @@ class ConvertEpubWorker(
             val locale = book.language?.let(Locale::forLanguageTag)?.takeIf { it.language.isNotEmpty() }
                 ?: Locale.ENGLISH
             for (index in book.chapters.indices) {
-                if (book.chapters[index].done) continue
+                if (book.chapters[index].done && !book.chapters[index].stale) continue
                 val text = repo.chapterTextFile(uuid, index).readText()
                 val finalFile = repo.chapterAudioFile(uuid, index)
                 val partFile = File(finalFile.parentFile, finalFile.name + ".part")
@@ -142,7 +142,7 @@ class ConvertEpubWorker(
         val total = weights.sum().coerceAtLeast(1.0)
         var done = 0.0
         book.chapters.forEachIndexed { i, chapter ->
-            if (chapter.done) done += weights.getOrElse(i) { 0.0 }
+            if (chapter.done && !chapter.stale) done += weights.getOrElse(i) { 0.0 }
         }
         if (currentIndex != null) done += weights.getOrElse(currentIndex) { 0.0 } * currentFraction
         return (done / total).toFloat().coerceIn(0f, 1f)

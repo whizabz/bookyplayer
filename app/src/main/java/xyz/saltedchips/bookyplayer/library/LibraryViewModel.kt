@@ -315,6 +315,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         publishBooks()
     }
 
+    fun regenerate(bookId: String, chapters: Set<Int>?) = EpubImporter.regenerate(getApplication(), bookId, chapters)
+
     fun resumeConversion(bookId: String) = EpubImporter.resume(getApplication(), bookId)
 
     fun pauseConversion(bookId: String) = EpubImporter.pause(getApplication(), bookId)

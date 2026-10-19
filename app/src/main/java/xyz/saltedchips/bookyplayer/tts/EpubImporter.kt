@@ -49,6 +49,37 @@ object EpubImporter {
         }
     }
 
+    /**
+     * Speaks chapters again with the book's voice. [chapters] null means every chapter. The old
+     * audio keeps playing until each new chapter replaces it.
+     */
+    fun regenerate(context: Context, bookId: String, chapters: Set<Int>? = null) {
+        val app = context.applicationContext
+        val repo = GeneratedBookStore.of(app)
+        val uuid = GeneratedBookRepository.uuidOf(bookId)
+        val book = repo.load(uuid) ?: return
+        val targets = chapters ?: book.chapters.indices.toSet()
+        targets.forEach { index ->
+            val audio = repo.chapterAudioFile(uuid, index)
+            listOf(".part", ".part.pcm", ".part.state", ".part.cues").forEach { suffix ->
+                File(audio.parentFile, audio.name + suffix).delete()
+            }
+        }
+        repo.save(
+            book.copy(
+                chapters = book.chapters.mapIndexed { i, chapter ->
+                    if (i in targets && chapter.done) chapter.copy(stale = true) else chapter.copy(
+                        done = chapter.done && i !in targets,
+                    )
+                },
+                status = ConversionStatus.Converting,
+                error = null,
+            ),
+        )
+        enqueue(app, uuid)
+        GeneratedBookStore.notifyChanged()
+    }
+
     /** Resumes a stopped or failed conversion where it left off. */
     fun resume(context: Context, bookId: String) {
         val app = context.applicationContext
