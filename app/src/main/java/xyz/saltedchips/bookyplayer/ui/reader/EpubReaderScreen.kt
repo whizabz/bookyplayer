@@ -171,7 +171,7 @@ fun EpubReaderScreen(
                             enabled = !state.loading && state.error == null,
                         ) {
                             Icon(
-                                if (onRegenerate != null) BookyIcons.autoReadPlay else BookyIcons.audioCapture,
+                                BookyIcons.audioCapture,
                                 contentDescription = if (onRegenerate != null) "Audiobook options" else "Generate audiobook",
                             )
                         }
@@ -217,6 +217,10 @@ fun EpubReaderScreen(
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            val showTip = state.audioTip && onRegenerate == null && !state.loading && state.error == null
+            LaunchedEffect(showTip) {
+                if (showTip) viewModel.markAudioTipSeen()
+            }
             when {
                 state.loading -> CircularProgressIndicator()
                 state.error != null -> Column(
@@ -328,6 +332,18 @@ fun EpubReaderScreen(
                     }
                 }
             }
+            if (showTip) {
+                AudioTipCard(
+                    onGenerate = {
+                        viewModel.dismissAudioTip()
+                        onMakeAudiobook()
+                    },
+                    onDismiss = viewModel::dismissAudioTip,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(16.dp),
+                )
+            }
         }
     }
 
@@ -350,6 +366,46 @@ fun EpubReaderScreen(
                             .padding(horizontal = 24.dp, vertical = 14.dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioTipCard(onGenerate: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    androidx.compose.material3.Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        color = colors.secondaryContainer,
+        contentColor = colors.onSecondaryContainer,
+        shadowElevation = 6.dp,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(
+                    BookyIcons.audioCapture,
+                    contentDescription = null,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text("Listen to this book", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Tap the audio icon at the top to turn this ePub into an audiobook. " +
+                            "You can read along while it plays.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Not now") }
+                Button(onClick = onGenerate) { Text("Generate audiobook") }
             }
         }
     }
