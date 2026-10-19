@@ -1,10 +1,15 @@
 package xyz.saltedchips.bookyplayer.library
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import java.io.File
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.data.BookKind
+import xyz.saltedchips.bookyplayer.epub.EpubMetadata
+import xyz.saltedchips.bookyplayer.epub.EpubParser
 
 data class LibraryScanResult(
     val treeFingerprint: String,
@@ -45,6 +50,12 @@ class LibraryScanner(private val context: Context) {
         val books = mutableListOf<Audiobook>()
         val fingerprints = mutableMapOf<String, String>()
         pending.forEachIndexed { index, item ->
+            if (item.epub) {
+                addEpub(item.id, item.title, item.media.first(), books, fingerprints, cache)
+                onProgress(index + 1, total, item.title)
+                onBooks(books.toList(), fingerprints.toMap())
+                return@forEachIndexed
+            }
             addBook(
                 id = item.id,
                 title = item.title,
@@ -68,6 +79,7 @@ class LibraryScanner(private val context: Context) {
         val author: String,
         val media: List<DocumentFile>,
         val coverUri: String?,
+        val epub: Boolean = false,
     )
 
     private fun discover(
@@ -88,6 +100,19 @@ class LibraryScanner(private val context: Context) {
             val name = child.name ?: return@filter false
             MediaKinds.isMedia(name)
         }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name ?: "" })
+
+        files.filter { it.name?.let(MediaKinds::isEpub) == true }
+            .sortedBy { it.uri.toString() }
+            .forEach { file ->
+                pending += PendingBook(
+                    id = file.uri.toString(),
+                    title = MetadataText.repair(MediaKinds.stem(file.name ?: "ePub")),
+                    author = "Unknown",
+                    media = listOf(file),
+                    coverUri = null,
+                    epub = true,
+                )
+            }
 
         if (!libraryRoot && media.isNotEmpty()) {
             pending += PendingBook(
@@ -153,6 +178,71 @@ class LibraryScanner(private val context: Context) {
             return
         }
         books += bookFrom(id, cleanedTitle, MetadataText.repair(author), media, coverUri)
+    }
+
+    private fun addEpub(
+        id: String,
+        stemTitle: String,
+        file: DocumentFile,
+        books: MutableList<Audiobook>,
+        fingerprints: MutableMap<String, String>,
+        cache: Map<String, Pair<Audiobook, String>>,
+    ) {
+        val fingerprint = "epub|${file.uri}|${file.lastModified()}|${file.length()}"
+        fingerprints[id] = fingerprint
+        val cached = cache[id]
+        if (cached != null && cached.second == fingerprint && cached.first.kind == BookKind.Epub) {
+            books += cached.first
+            return
+        }
+        books += epubBookFrom(id, stemTitle, file)
+    }
+
+    private fun epubBookFrom(id: String, stemTitle: String, file: DocumentFile): Audiobook {
+        var meta: EpubMetadata? = null
+        val temp = File.createTempFile("scan", ".epub", context.cacheDir)
+        try {
+            context.contentResolver.openInputStream(file.uri)?.use { input ->
+                temp.outputStream().use { input.copyTo(it) }
+            }
+            meta = runCatching { EpubParser.readMetadata(temp) }.getOrNull()
+        } catch (_: Exception) {
+            // Listed anyway; opening it explains what's wrong.
+        } finally {
+            temp.delete()
+        }
+        var coverUri: String? = null
+        meta?.coverBytes?.let { bytes ->
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > 900 || bounds.outHeight / sample > 900) sample *= 2
+            val bitmap = BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sample },
+            )
+            if (bitmap != null) coverUri = CoverStore.save(context, id, bitmap)
+        }
+        val titles = meta?.chapterTitles.orEmpty()
+        return Audiobook(
+            id = id,
+            title = MetadataText.repair(meta?.title?.takeIf { it.isNotBlank() } ?: stemTitle),
+            author = MetadataText.repair(meta?.author?.takeIf { it.isNotBlank() } ?: "Unknown"),
+            narrator = "",
+            chapterCount = titles.size.coerceAtLeast(1),
+            fileCount = 1,
+            durationMs = 0L,
+            listenedMs = 0L,
+            currentChapter = 1,
+            currentChapterTitle = titles.firstOrNull().orEmpty(),
+            fileName = MetadataText.repair(file.name ?: stemTitle),
+            coverUri = coverUri,
+            chapterTitles = titles,
+            addedAtMs = file.lastModified().takeIf { it > 0L } ?: 0L,
+            kind = BookKind.Epub,
+        )
     }
 
     private fun fileFingerprint(media: List<DocumentFile>, coverUri: String?): String {

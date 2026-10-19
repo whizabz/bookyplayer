@@ -19,6 +19,15 @@ class EpubBook(
     val coverExtension: String?,
 )
 
+class EpubMetadata(
+    val title: String,
+    val author: String,
+    val language: String?,
+    val chapterTitles: List<String>,
+    val coverBytes: ByteArray?,
+    val coverExtension: String?,
+)
+
 /** The ePub is copy-protected; Booky does not try to get around that. */
 class EpubDrmException : Exception("This ePub is DRM-protected and can't be imported.")
 
@@ -38,7 +47,20 @@ object EpubParser {
     )
     private const val BLOCKS = "h1,h2,h3,h4,h5,h6,p,li,blockquote,pre"
 
-    fun parse(file: File): EpubBook = ZipFile(file).use { zip ->
+    private class Item(val id: String, val path: String, val mediaType: String, val properties: String)
+
+    private class Pkg(
+        val title: String,
+        val author: String,
+        val language: String?,
+        val spine: List<Item>,
+        val tocTitles: Map<String, String>,
+        val coverBytes: ByteArray?,
+        val coverExtension: String?,
+        val html: (String) -> Document?,
+    )
+
+    private fun readPackage(zip: ZipFile, fallbackTitle: String): Pkg {
         fun bytes(path: String): ByteArray? = zip.getEntry(path)?.let { entry ->
             zip.getInputStream(entry).use { it.readBytes() }
         }
@@ -57,11 +79,10 @@ object EpubParser {
         val opfDir = opfPath.substringBeforeLast('/', "")
 
         val title = opf.getElementsByTag("dc:title").firstOrNull()?.text()?.trim()
-            ?.takeIf { it.isNotEmpty() } ?: file.nameWithoutExtension
+            ?.takeIf { it.isNotEmpty() } ?: fallbackTitle
         val author = opf.getElementsByTag("dc:creator").firstOrNull()?.text()?.trim().orEmpty()
         val language = opf.getElementsByTag("dc:language").firstOrNull()?.text()?.trim()
 
-        class Item(val id: String, val path: String, val mediaType: String, val properties: String)
         val items = opf.select("manifest > item").associate { el ->
             val id = el.attr("id")
             id to Item(
@@ -108,14 +129,20 @@ object EpubParser {
             }
         }
 
+        val spine = opf.select("spine > itemref").mapNotNull { ref ->
+            if (ref.attr("linear").equals("no", ignoreCase = true)) return@mapNotNull null
+            items[ref.attr("idref")]?.takeIf { it.mediaType.contains("html") }
+        }
+        return Pkg(title, author, language, spine, tocTitles, coverBytes, coverExtension, ::html)
+    }
+
+    fun parse(file: File): EpubBook = ZipFile(file).use { zip ->
+        val pkg = readPackage(zip, file.nameWithoutExtension)
         val chapters = mutableListOf<EpubChapter>()
-        opf.select("spine > itemref").forEach { ref ->
-            if (ref.attr("linear").equals("no", ignoreCase = true)) return@forEach
-            val item = items[ref.attr("idref")] ?: return@forEach
-            if (!item.mediaType.contains("html")) return@forEach
-            val doc = html(item.path) ?: return@forEach
+        pkg.spine.forEach { item ->
+            val doc = pkg.html(item.path) ?: return@forEach
             val text = extractText(doc)
-            val tocTitle = tocTitles[item.path]
+            val tocTitle = pkg.tocTitles[item.path]
             val heading = doc.selectFirst("h1,h2,h3")?.text()?.trim()?.takeIf { it.isNotEmpty() }
             val chapterTitle = tocTitle ?: heading
             if (chapterTitle != null && FRONT_MATTER.matches(chapterTitle)) return@forEach
@@ -123,7 +150,16 @@ object EpubParser {
             chapters += EpubChapter(chapterTitle ?: "Chapter ${chapters.size + 1}", text)
         }
         if (chapters.isEmpty()) throw EpubParseException("No readable text found in this ePub")
-        EpubBook(title, author, language, chapters, coverBytes, coverExtension)
+        EpubBook(pkg.title, pkg.author, pkg.language, chapters, pkg.coverBytes, pkg.coverExtension)
+    }
+
+    /** Title, author, cover and an approximate chapter list, without reading the book text. */
+    fun readMetadata(file: File): EpubMetadata = ZipFile(file).use { zip ->
+        val pkg = readPackage(zip, file.nameWithoutExtension)
+        val titles = pkg.spine.mapNotNull { pkg.tocTitles[it.path] }
+            .filterNot { FRONT_MATTER.matches(it) }
+            .ifEmpty { pkg.spine.indices.map { "Chapter ${it + 1}" } }
+        EpubMetadata(pkg.title, pkg.author, pkg.language, titles, pkg.coverBytes, pkg.coverExtension)
     }
 
     private fun checkDrm(hasRights: Boolean, encryption: Document?) {

@@ -2,6 +2,8 @@ package xyz.saltedchips.bookyplayer.data
 
 import androidx.annotation.DrawableRes
 
+enum class BookKind { Audio, Epub }
+
 data class Audiobook(
     val id: String,
     val title: String,
@@ -23,6 +25,7 @@ data class Audiobook(
     val chapterStartMs: List<Long> = emptyList(),
     val addedAtMs: Long = 0L,
     val lastPlayedMs: Long = 0L,
+    val kind: BookKind = BookKind.Audio,
 )
 
 fun Audiobook.chapterTotal(): Int {

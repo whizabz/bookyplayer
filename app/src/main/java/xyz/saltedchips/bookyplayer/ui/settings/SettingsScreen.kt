@@ -87,7 +87,6 @@ fun SettingsScreen(
     playbackNotificationsEnabled: Boolean? = null,
     onPlaybackNotificationsClick: () -> Unit = {},
     onOpenPlaceholderCover: () -> Unit = {},
-    onImportEpub: () -> Unit = {},
     voiceModelBytes: Long = 0L,
     onDeleteVoiceModel: () -> Unit = {},
     onBack: () -> Unit = {},
@@ -294,31 +293,20 @@ fun SettingsScreen(
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column {
+            if (voiceModelBytes > 0L) {
+                Card(modifier = Modifier.fillMaxWidth()) {
                     ListItem(
-                        headlineContent = { Text("Make audiobook from ePub") },
+                        headlineContent = { Text("Audiobook voice") },
                         supportingContent = {
-                            Text("Read an ePub aloud on this phone with a downloadable voice")
+                            Text("Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone")
                         },
-                        leadingContent = { Icon(BookyIcons.add, contentDescription = null) },
+                        trailingContent = {
+                            androidx.compose.material3.TextButton(onClick = onDeleteVoiceModel) {
+                                Text("Delete")
+                            }
+                        },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.clickable(onClick = onImportEpub),
                     )
-                    if (voiceModelBytes > 0L) {
-                        ListItem(
-                            headlineContent = { Text("Voice model") },
-                            supportingContent = {
-                                Text("Kokoro · ${voiceModelBytes / 1_000_000} MB on this phone")
-                            },
-                            trailingContent = {
-                                androidx.compose.material3.TextButton(onClick = onDeleteVoiceModel) {
-                                    Text("Delete")
-                                }
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        )
-                    }
                 }
             }
 

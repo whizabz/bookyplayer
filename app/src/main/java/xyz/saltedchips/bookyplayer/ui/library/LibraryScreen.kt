@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.data.BookKind
 import xyz.saltedchips.bookyplayer.data.formatDuration
 import xyz.saltedchips.bookyplayer.library.GeneratedBook
 import xyz.saltedchips.bookyplayer.library.LibrarySort
@@ -117,7 +118,6 @@ fun LibraryScreen(
     onResumeConversion: (String) -> Unit = {},
     onStopConversion: (String) -> Unit = {},
     onRemoveConversion: (String) -> Unit = {},
-    onImportEpub: () -> Unit = {},
 ) {
     var sortMenu by remember { mutableStateOf(false) }
     var selecting by rememberSaveable { mutableStateOf(false) }
@@ -243,9 +243,6 @@ fun LibraryScreen(
                         exit = exitToEnd,
                     ) {
                         Row {
-                            IconButton(onClick = onImportEpub) {
-                                Icon(BookyIcons.add, contentDescription = "Make audiobook from ePub")
-                            }
                             Box {
                                 IconButton(onClick = { sortMenu = true }) {
                                     Icon(BookyIcons.sort, contentDescription = "Sort")
@@ -416,6 +413,7 @@ fun LibraryScreen(
                 LibraryLayout.Hero -> {
                     val heroBook = shown.firstOrNull { it.id == activeBookId }
                         ?: shown
+                            .filter { it.kind == BookKind.Audio }
                             .filter { it.listenedMs > 0L && it.listenedMs < it.durationMs }
                             .maxByOrNull { it.lastPlayedMs }
                     LazyColumn(
@@ -734,15 +732,31 @@ private fun LibraryRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (book.kind == BookKind.Epub) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            EpubBadge()
+                            Text(
+                                book.author,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .padding(start = 8.dp),
+                            )
+                        }
+                    } else {
+                        Text(
+                            "${book.author} · ${book.narrator}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Text(
-                        "${book.author} · ${book.narrator}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        remainingLabel,
+                        if (book.kind == BookKind.Epub) "Read · ${book.chapterCount} chapters" else remainingLabel,
                         style = MaterialTheme.typography.labelMedium,
                         color = scheme.primary,
                         modifier = Modifier.padding(top = 2.dp),
@@ -769,10 +783,14 @@ private fun LibraryRow(
                             ),
                             modifier = Modifier.size(48.dp),
                         ) {
-                            Icon(
-                                if (playing) BookyIcons.pause else BookyIcons.play,
-                                contentDescription = if (playing) "Pause" else "Play",
-                            )
+                            if (book.kind == BookKind.Epub) {
+                                Icon(BookyIcons.menuBook, contentDescription = "Read")
+                            } else {
+                                Icon(
+                                    if (playing) BookyIcons.pause else BookyIcons.play,
+                                    contentDescription = if (playing) "Pause" else "Play",
+                                )
+                            }
                         }
                     }
                 }

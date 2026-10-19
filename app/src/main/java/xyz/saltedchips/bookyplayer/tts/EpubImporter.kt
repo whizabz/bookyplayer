@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import xyz.saltedchips.bookyplayer.epub.EpubParseException
 import xyz.saltedchips.bookyplayer.epub.EpubParser
 import xyz.saltedchips.bookyplayer.library.ConversionStatus
 import xyz.saltedchips.bookyplayer.library.GeneratedBookRepository
@@ -33,8 +34,13 @@ object EpubImporter {
             app.contentResolver.openInputStream(uri)?.use { input ->
                 temp.outputStream().use { input.copyTo(it) }
             } ?: error("Couldn't open that file")
+            val repo = GeneratedBookStore.of(app)
+            val sourceId = uri.toString()
+            if (repo.all().any { it.sourceId == sourceId && it.status != ConversionStatus.Failed }) {
+                throw EpubParseException("An audiobook from this ePub already exists or is being made.")
+            }
             val epub = EpubParser.parse(temp)
-            val book = GeneratedBookStore.of(app).create(epub, voiceSid, speed)
+            val book = repo.create(epub, voiceSid, speed, sourceId = sourceId)
             enqueue(app, book.uuid)
             GeneratedBookStore.notifyChanged()
             book.id

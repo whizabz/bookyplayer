@@ -26,6 +26,7 @@ data class GeneratedBook(
     val chapters: List<GeneratedChapter>,
     val status: ConversionStatus,
     val error: String? = null,
+    val sourceId: String? = null,
 ) {
     val id: String get() = GeneratedBookRepository.ID_PREFIX + uuid
     val doneChapters: Int get() = chapters.count { it.done }
@@ -44,7 +45,13 @@ class GeneratedBookRepository(private val root: File) {
     fun coverFile(uuid: String): File? =
         dir(uuid).listFiles()?.firstOrNull { it.name.startsWith("cover.") }
 
-    fun create(epub: EpubBook, voiceSid: Int, speed: Float, now: Long = System.currentTimeMillis()): GeneratedBook {
+    fun create(
+        epub: EpubBook,
+        voiceSid: Int,
+        speed: Float,
+        now: Long = System.currentTimeMillis(),
+        sourceId: String? = null,
+    ): GeneratedBook {
         val uuid = UUID.randomUUID().toString()
         epub.chapters.forEachIndexed { index, chapter ->
             chapterTextFile(uuid, index).apply { parentFile?.mkdirs() }.writeText(chapter.text)
@@ -63,6 +70,7 @@ class GeneratedBookRepository(private val root: File) {
             createdAtMs = now,
             chapters = epub.chapters.map { GeneratedChapter(it.title) },
             status = ConversionStatus.Converting,
+            sourceId = sourceId,
         )
         save(book)
         return book
@@ -79,6 +87,7 @@ class GeneratedBookRepository(private val root: File) {
             .put("createdAtMs", book.createdAtMs)
             .put("status", book.status.name)
             .put("error", book.error ?: JSONObject.NULL)
+            .put("sourceId", book.sourceId ?: JSONObject.NULL)
             .put(
                 "chapters",
                 JSONArray(
@@ -112,6 +121,7 @@ class GeneratedBookRepository(private val root: File) {
             status = ConversionStatus.entries.firstOrNull { it.name == json.optString("status") }
                 ?: ConversionStatus.Failed,
             error = if (json.isNull("error")) null else json.optString("error"),
+            sourceId = if (json.isNull("sourceId")) null else json.optString("sourceId"),
         )
     }.getOrNull()
 

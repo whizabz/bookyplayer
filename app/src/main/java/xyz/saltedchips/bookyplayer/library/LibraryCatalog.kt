@@ -2,6 +2,7 @@ package xyz.saltedchips.bookyplayer.library
 
 import android.content.Context
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.data.BookKind
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -71,6 +72,7 @@ object LibraryCatalogStore {
         .put("chapterDurationsMs", JSONArray(book.chapterDurationsMs))
         .put("chapterStartMs", JSONArray(book.chapterStartMs))
         .put("addedAtMs", book.addedAtMs)
+        .put("kind", book.kind.name)
 
     private fun decodeBook(json: JSONObject): Audiobook? {
         val id = json.optString("id").ifBlank { return null }
@@ -96,6 +98,7 @@ object LibraryCatalogStore {
             chapterDurationsMs = longList(json.optJSONArray("chapterDurationsMs")),
             chapterStartMs = longList(json.optJSONArray("chapterStartMs")),
             addedAtMs = json.optLong("addedAtMs"),
+            kind = if (json.optString("kind") == BookKind.Epub.name) BookKind.Epub else BookKind.Audio,
         )
     }
 

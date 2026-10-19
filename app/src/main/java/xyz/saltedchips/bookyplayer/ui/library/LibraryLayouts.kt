@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.data.BookKind
 import xyz.saltedchips.bookyplayer.data.formatDuration
 import xyz.saltedchips.bookyplayer.ui.components.BookCover
 import xyz.saltedchips.bookyplayer.ui.components.BookyIcons
@@ -190,13 +191,29 @@ internal fun LibraryCompactRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    "${book.author} · ${bookRemainingLabel(book, progress)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (book.kind == BookKind.Epub) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        EpubBadge()
+                        Text(
+                            "${book.author} · ${book.chapterCount} chapters",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(start = 8.dp),
+                        )
+                    }
+                } else {
+                    Text(
+                        "${book.author} · ${bookRemainingLabel(book, progress)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             if (selecting) {
                 Checkbox(checked = selected, onCheckedChange = null)
@@ -215,11 +232,19 @@ internal fun LibraryCompactRow(
                         ),
                         modifier = Modifier.size(if (progress > 0f) 24.dp else 36.dp),
                     ) {
-                        Icon(
-                            if (playing) BookyIcons.pause else BookyIcons.play,
-                            contentDescription = if (playing) "Pause" else "Play",
-                            modifier = Modifier.size(if (progress > 0f) 14.dp else 20.dp),
-                        )
+                        if (book.kind == BookKind.Epub) {
+                            Icon(
+                                BookyIcons.menuBook,
+                                contentDescription = "Read",
+                                modifier = Modifier.size(20.dp),
+                            )
+                        } else {
+                            Icon(
+                                if (playing) BookyIcons.pause else BookyIcons.play,
+                                contentDescription = if (playing) "Pause" else "Play",
+                                modifier = Modifier.size(if (progress > 0f) 14.dp else 20.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -301,11 +326,19 @@ internal fun LibraryGridItem(
                         ),
                         modifier = Modifier.size(if (progress > 0f && !active) 22.dp else 40.dp),
                     ) {
-                        Icon(
-                            if (playing) BookyIcons.pause else BookyIcons.play,
-                            contentDescription = if (playing) "Pause" else "Play",
-                            modifier = Modifier.size(if (progress > 0f && !active) 14.dp else 20.dp),
-                        )
+                        if (book.kind == BookKind.Epub) {
+                            Icon(
+                                BookyIcons.menuBook,
+                                contentDescription = "Read",
+                                modifier = Modifier.size(20.dp),
+                            )
+                        } else {
+                            Icon(
+                                if (playing) BookyIcons.pause else BookyIcons.play,
+                                contentDescription = if (playing) "Pause" else "Play",
+                                modifier = Modifier.size(if (progress > 0f && !active) 14.dp else 20.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -318,7 +351,7 @@ internal fun LibraryGridItem(
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp),
         )
         Text(
-            bookRemainingLabel(book, progress),
+            if (book.kind == BookKind.Epub) "ePub · ${book.chapterCount} chapters" else bookRemainingLabel(book, progress),
             style = MaterialTheme.typography.labelMedium,
             color = scheme.onSurfaceVariant,
             maxLines = 1,
@@ -389,5 +422,21 @@ internal fun ConversionCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun EpubBadge(modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        modifier = modifier,
+    ) {
+        Text(
+            "ePub",
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
     }
 }

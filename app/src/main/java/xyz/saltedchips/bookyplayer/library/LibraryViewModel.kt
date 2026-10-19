@@ -12,6 +12,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.data.BookKind
 import xyz.saltedchips.bookyplayer.tts.EpubImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -382,7 +383,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             it.copy(
                 books = books,
                 conversions = conversions,
-                playQueue = books,
+                playQueue = books.filter { it.kind == BookKind.Audio },
                 scanning = scanning,
                 scanDone = scanDone,
                 scanTotal = scanTotal,

@@ -39,6 +39,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import xyz.saltedchips.bookyplayer.data.Audiobook
+import xyz.saltedchips.bookyplayer.data.BookKind
 import xyz.saltedchips.bookyplayer.library.LibraryViewModel
 import xyz.saltedchips.bookyplayer.library.PersistableOpenDocumentTree
 import xyz.saltedchips.bookyplayer.player.PlayerViewModel
@@ -49,6 +50,7 @@ import xyz.saltedchips.bookyplayer.ui.library.EpubImportSheet
 import xyz.saltedchips.bookyplayer.ui.components.PredictiveBackOverlay
 import xyz.saltedchips.bookyplayer.ui.library.BookDetailScreen
 import xyz.saltedchips.bookyplayer.ui.library.LibraryScreen
+import xyz.saltedchips.bookyplayer.ui.reader.EpubReaderScreen
 import xyz.saltedchips.bookyplayer.ui.player.NowPlayingScreen
 import xyz.saltedchips.bookyplayer.ui.settings.PlaceholderCoverScreen
 import xyz.saltedchips.bookyplayer.ui.settings.SettingsScreen
@@ -92,14 +94,6 @@ fun BookyApp(
     val importViewModel: EpubImportViewModel = viewModel()
     val importState by importViewModel.state.collectAsStateWithLifecycle()
     var pendingEpubUri by rememberSaveable { mutableStateOf<String?>(null) }
-    val pickEpub = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            importViewModel.clearImportError()
-            importViewModel.refresh()
-            pendingEpubUri = uri.toString()
-        }
-    }
-    fun launchEpubPicker() = pickEpub.launch(arrayOf("application/epub+zip", "application/octet-stream"))
     val notifyPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {
@@ -175,13 +169,16 @@ fun BookyApp(
         var showingSettings by rememberSaveable { mutableStateOf(false) }
         var showingPlaceholderCover by rememberSaveable { mutableStateOf(false) }
         var detailBookId by rememberSaveable { mutableStateOf<String?>(null) }
+        var readingBookId by rememberSaveable { mutableStateOf<String?>(null) }
         var nowPlaying by rememberSaveable { mutableStateOf(false) }
         val canvas = MaterialTheme.colorScheme.background
         val hazeState = rememberHazeState()
         val miniPlayerClearance = if (player.book != null) 104.dp else 0.dp
         var cachedDetailBook by remember { mutableStateOf<Audiobook?>(null) }
         val playBook: (Audiobook) -> Unit = { book ->
-            if (player.book?.id == book.id && player.isPlaying) {
+            if (book.kind == BookKind.Epub) {
+                readingBookId = book.id
+            } else if (player.book?.id == book.id && player.isPlaying) {
                 playerViewModel.togglePlay()
             } else {
                 withPlaybackReady {
@@ -202,7 +199,7 @@ fun BookyApp(
         val detailBook = library.books.find { it.id == detailBookId }
         if (detailBook != null) cachedDetailBook = detailBook
         val overlayBook = detailBook ?: cachedDetailBook
-        val libraryCovered = detailBookId != null || showingSettings || showingPlaceholderCover
+        val libraryCovered = detailBookId != null || readingBookId != null || showingSettings || showingPlaceholderCover
         val detailsCovered = showingSettings || showingPlaceholderCover
 
         Box(Modifier.fillMaxSize()) {
@@ -264,14 +261,15 @@ fun BookyApp(
                                 ?.let(playerViewModel::patchDisplayedBook)
                         },
                         onChooseFolder = { pickFolder.launch(null) },
-                        onOpenBook = { opened -> detailBookId = opened.id },
+                        onOpenBook = { opened ->
+                            if (opened.kind == BookKind.Epub) readingBookId = opened.id else detailBookId = opened.id
+                        },
                         onPlayBook = playBook,
                         onOpenSettings = { showingSettings = true },
                         conversions = library.conversions,
                         onResumeConversion = libraryViewModel::resumeConversion,
                         onStopConversion = libraryViewModel::stopConversion,
                         onRemoveConversion = libraryViewModel::removeConversion,
-                        onImportEpub = ::launchEpubPicker,
                         bottomContentPadding = 24.dp + miniPlayerClearance,
                         selectionBackEnabled = !libraryCovered,
                         layout = libraryLayout,
@@ -281,6 +279,33 @@ fun BookyApp(
                             screenModifier
                         },
                     )
+                    var cachedReadingBook by remember { mutableStateOf<Audiobook?>(null) }
+                    val readingBook = library.books.find { it.id == readingBookId }
+                    if (readingBook != null) cachedReadingBook = readingBook
+                    LaunchedEffect(readingBookId, library.books) {
+                        if (readingBookId != null && library.books.none { it.id == readingBookId }) {
+                            readingBookId = null
+                        }
+                    }
+                    PredictiveBackOverlay(
+                        visible = cachedReadingBook != null && readingBookId != null,
+                        onDismiss = { readingBookId = null },
+                        interceptBack = readingBookId != null && !detailsCovered,
+                    ) {
+                        val book = cachedReadingBook
+                        if (book != null) {
+                            EpubReaderScreen(
+                                book = book,
+                                onBack = { readingBookId = null },
+                                onMakeAudiobook = {
+                                    importViewModel.clearImportError()
+                                    importViewModel.refresh()
+                                    pendingEpubUri = book.id
+                                },
+                                modifier = screenModifier,
+                            )
+                        }
+                    }
                     PredictiveBackOverlay(
                         visible = overlayBook != null && detailBookId != null,
                         onDismiss = { detailBookId = null },
@@ -447,7 +472,6 @@ fun BookyApp(
                         }
                     },
                     onOpenPlaceholderCover = { showingPlaceholderCover = true },
-                    onImportEpub = ::launchEpubPicker,
                     voiceModelBytes = importState.modelBytes,
                     onDeleteVoiceModel = importViewModel::deleteModel,
                     onBack = {

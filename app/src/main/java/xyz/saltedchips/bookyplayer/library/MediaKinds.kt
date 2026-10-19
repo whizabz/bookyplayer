@@ -30,6 +30,8 @@ object MediaKinds {
         return stem(name).lowercase() in coverNames
     }
 
+    fun isEpub(name: String): Boolean = extension(name) == "epub"
+
     fun isImage(name: String): Boolean = extension(name) in image
 
     fun isMp4Container(name: String): Boolean {

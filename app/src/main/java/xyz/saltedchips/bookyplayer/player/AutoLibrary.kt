@@ -9,6 +9,7 @@ import androidx.media3.session.MediaSession
 import org.json.JSONObject
 import xyz.saltedchips.bookyplayer.data.Audiobook
 import xyz.saltedchips.bookyplayer.library.CoverLoader
+import xyz.saltedchips.bookyplayer.data.BookKind
 import xyz.saltedchips.bookyplayer.library.GeneratedBookStore
 import xyz.saltedchips.bookyplayer.library.LibraryCatalogStore
 import xyz.saltedchips.bookyplayer.library.LibrarySort
@@ -144,6 +145,7 @@ class AutoLibrary(context: Context) {
         val lastPlayed = loadLongMap(KEY_LAST_PLAYED)
         val metadata = loadMetadata()
         return allBooks
+            .filter { it.kind == BookKind.Audio }
             .filterNot { it.id in hidden }
             .map { book -> decorate(book, metadata[book.id], listened, lastPlayed) }
     }
